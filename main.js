@@ -400,7 +400,7 @@ function resetGame() {
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
   Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, beaten: 0 });
   SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SM.g = 1; SM.t = SM.delay = -1;
-  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0;
+  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null;
 }
 
 function spawnRow(z) {
@@ -630,6 +630,50 @@ const ROLLOVER = { id: 'rollover', name: '', T: 0.32, beatT: 0.12,
                yaw: [[0, 0], [0.13, -0.15], [0.21, -0.1], [0.32, 0]] } },
   bones: { neck_01: [[[0, 0], [0.08, 0.25], [0.32, 0]], 0, 0],
     upperarm_l: [0, 0, [[0, 0], [0.1, -0.6], [0.3, 0]]], upperarm_r: [0, 0, [[0, 0], [0.1, 0.9], [0.3, 0]]] } };
+
+// ---------- MOCAP roll-over legs ----------
+// Captured foot trajectories (MediaPipe heavy, FC Cincinnati clip, Butterworth 5 Hz, retargeted + rig-scaled in Blender):
+// 17 frames, per frame [ankle_l, ankle_r, heel_l, heel_r, toe_l, toe_r] in G (x right, y up, -z fwd), hip-centred, ground y=0.
+// L = moving LEFT (right sole rolls), R = mirrored (left sole rolls).
+const MCF = {"L":[[[-0.0374,0.1132,-0.4018],[0.2548,0.1264,0.1873],[-0.0172,0.077,-0.4039],[0.2641,0.0921,0.1638],[-0.0263,0.0933,-0.4818],[0.3223,0.1055,0.0716]],[[-0.0551,0.1061,-0.4064],[0.2896,0.1481,0.2355],[-0.0344,0.0691,-0.4106],[0.2962,0.1132,0.2125],[-0.0241,0.0729,-0.4863],[0.3671,0.1228,0.1244]],[[-0.0604,0.0817,-0.3364],[0.347,0.1615,0.1958],[-0.0386,0.044,-0.337],[0.3534,0.1261,0.1664],[-0.0038,0.0321,-0.4177],[0.444,0.1447,0.0846]],[[-0.032,0.0603,-0.2411],[0.4109,0.1862,0.0645],[-0.0083,0.0223,-0.2365],[0.4202,0.1525,0.0265],[0.0376,0.0,-0.3309],[0.5235,0.191,-0.0512]],[[0.0073,0.0598,-0.212],[0.4542,0.2288,-0.0877],[0.0323,0.0221,-0.2079],[0.4673,0.1983,-0.1326],[0.0752,0.0007,-0.307],[0.5774,0.258,-0.215]],[[0.0346,0.0647,-0.213],[0.462,0.2632,-0.2119],[0.0598,0.027,-0.2121],[0.477,0.2345,-0.263],[0.1007,0.0086,-0.3065],[0.5943,0.3074,-0.3526]],[[0.0619,0.065,-0.1929],[0.4463,0.2709,-0.2768],[0.0888,0.0269,-0.1939],[0.4615,0.242,-0.3305],[0.1358,0.0155,-0.2868],[0.577,0.3165,-0.4221]],[[0.1038,0.0649,-0.1833],[0.4194,0.27,-0.2951],[0.1348,0.0264,-0.1856],[0.4333,0.2397,-0.3494],[0.1979,0.0314,-0.2849],[0.5355,0.306,-0.4432]],[[0.1444,0.0663,-0.223],[0.3616,0.2823,-0.2848],[0.1802,0.0279,-0.2299],[0.3694,0.2524,-0.3368],[0.2598,0.0521,-0.3367],[0.4689,0.3006,-0.4316]],[[0.1656,0.084,-0.2869],[0.2249,0.3014,-0.3035],[0.2055,0.049,-0.2999],[0.2228,0.2741,-0.3496],[0.2823,0.083,-0.4002],[0.3203,0.2898,-0.4399]],[[0.1788,0.1179,-0.2977],[0.0621,0.3089,-0.3633],[0.2223,0.0888,-0.3123],[0.0507,0.2816,-0.4056],[0.2868,0.12,-0.3991],[0.1228,0.2733,-0.4972]],[[0.1921,0.1375,-0.2396],[-0.0341,0.2987,-0.3813],[0.2362,0.112,-0.2533],[-0.0513,0.2689,-0.42],[0.2882,0.1345,-0.3295],[-0.007,0.2615,-0.5163]],[[0.1942,0.1253,-0.1644],[-0.0843,0.2635,-0.3376],[0.2373,0.1,-0.1775],[-0.1028,0.2321,-0.3729],[0.2763,0.1214,-0.245],[-0.0614,0.236,-0.4715]],[[0.1626,0.0949,-0.1222],[-0.1507,0.2101,-0.2914],[0.2043,0.0676,-0.1335],[-0.1708,0.177,-0.3259],[0.238,0.0944,-0.198],[-0.1178,0.1836,-0.4274]],[[0.1195,0.0643,-0.0951],[-0.1867,0.1479,-0.2383],[0.1593,0.0341,-0.103],[-0.2087,0.113,-0.2722],[0.1991,0.055,-0.1706],[-0.1499,0.1085,-0.3758]],[[0.1096,0.0519,-0.0339],[-0.1558,0.0941,-0.1529],[0.1502,0.0205,-0.0364],[-0.1767,0.0584,-0.1842],[0.1899,0.0237,-0.0974],[-0.119,0.0405,-0.2868]],[[0.112,0.0585,0.0595],[-0.0993,0.0681,-0.065],[0.1546,0.0284,0.0659],[-0.1165,0.0328,-0.0937],[0.1819,0.0147,0.027],[-0.0591,0.0089,-0.1887]]],"R":[[[-0.2781,0.1068,0.2044],[0.0408,0.1529,-0.4386],[-0.2883,0.0674,0.1788],[0.0187,0.1092,-0.4409],[-0.3518,0.07,0.0781],[0.0287,0.1289,-0.5259]],[[-0.3161,0.1233,0.2571],[0.0602,0.1489,-0.4436],[-0.3233,0.0838,0.232],[0.0375,0.1042,-0.4482],[-0.4007,0.0796,0.1357],[0.0263,0.1062,-0.5308]],[[-0.3787,0.1261,0.2138],[0.0659,0.1233,-0.3672],[-0.3858,0.0861,0.1816],[0.0421,0.0777,-0.3678],[-0.4846,0.0876,0.0924],[0.0041,0.0574,-0.4559]],[[-0.4485,0.1398,0.0704],[0.0349,0.0941,-0.2631],[-0.4587,0.1011,0.0289],[0.0091,0.0477,-0.2581],[-0.5714,0.1216,-0.0558],[-0.0411,0.0138,-0.3611]],[[-0.4957,0.1773,-0.0957],[-0.008,0.0854,-0.2314],[-0.5101,0.1412,-0.1448],[-0.0352,0.0391,-0.227],[-0.6302,0.1836,-0.2347],[-0.0821,0.0068,-0.3351]],[[-0.5043,0.2132,-0.2312],[-0.0377,0.0851,-0.2325],[-0.5207,0.1787,-0.2871],[-0.0653,0.0388,-0.2315],[-0.6487,0.234,-0.3849],[-0.1099,0.0102,-0.3345]],[[-0.4871,0.2249,-0.3022],[-0.0676,0.0798,-0.2106],[-0.5038,0.1901,-0.3608],[-0.0969,0.0326,-0.2116],[-0.6298,0.2475,-0.4607],[-0.1482,0.0104,-0.313]],[[-0.4578,0.2294,-0.3221],[-0.1133,0.071,-0.2001],[-0.473,0.1935,-0.3813],[-0.1472,0.0226,-0.2026],[-0.5844,0.2446,-0.4838],[-0.216,0.0149,-0.311]],[[-0.3947,0.2549,-0.3108],[-0.1576,0.0641,-0.2434],[-0.4032,0.2206,-0.3676],[-0.1966,0.0148,-0.2509],[-0.5118,0.2526,-0.4711],[-0.2835,0.0247,-0.3675]],[[-0.2455,0.304,-0.3313],[-0.1808,0.079,-0.3131],[-0.2432,0.2747,-0.3816],[-0.2243,0.0325,-0.3273],[-0.3496,0.2716,-0.4801],[-0.3081,0.0538,-0.4368]],[[-0.0678,0.3459,-0.3966],[-0.1952,0.1133,-0.325],[-0.0553,0.3185,-0.4427],[-0.2426,0.0725,-0.3409],[-0.1341,0.2945,-0.5427],[-0.313,0.0931,-0.4357]],[[0.0372,0.3547,-0.4162],[-0.2097,0.1319,-0.2616],[0.056,0.3258,-0.4585],[-0.2578,0.095,-0.2765],[0.0076,0.3085,-0.5635],[-0.3145,0.1088,-0.3597]],[[0.092,0.3267,-0.3685],[-0.212,0.1181,-0.1794],[0.1122,0.2963,-0.407],[-0.2591,0.0816,-0.1938],[0.067,0.2919,-0.5147],[-0.3016,0.0969,-0.2674]],[[0.1645,0.2822,-0.3181],[-0.1775,0.0915,-0.1334],[0.1864,0.2502,-0.3557],[-0.223,0.0531,-0.1457],[0.1286,0.2464,-0.4665],[-0.2598,0.0754,-0.2161]],[[0.2037,0.2217,-0.2602],[-0.1304,0.0671,-0.1038],[0.2278,0.1882,-0.2971],[-0.1738,0.0259,-0.1125],[0.1636,0.1711,-0.4102],[-0.2173,0.0404,-0.1862]],[[0.17,0.1566,-0.1668],[-0.1196,0.0556,-0.037],[0.1929,0.122,-0.2011],[-0.1639,0.0129,-0.0397],[0.1298,0.0904,-0.3131],[-0.2072,0.0081,-0.1063]],[[0.1084,0.1166,-0.071],[-0.1223,0.0622,0.065],[0.1272,0.0816,-0.1023],[-0.1688,0.0206,0.072],[0.0645,0.0436,-0.206],[-0.1985,0.0,0.0295]]]};
+const MC_Y = A - 0.055;                                   // captured flat-foot ankle height -> rig ankle height
+const MC_WARP = [[0, 0], [0.04, 5], [0.28, 13], [0.32, 16]]; // game time -> capture frame (contact = capture frames 5..12)
+function mcIdx(t) { const k = MC_WARP; if (t <= 0) return 0; for (let i = 1; i < k.length; i++) if (t <= k[i][0]) return k[i - 1][1] + (k[i][1] - k[i - 1][1]) * (t - k[i - 1][0]) / (k[i][0] - k[i - 1][0]); return 16; }
+function mcRaw(d, j, t, out) { // Catmull-Rom through the captured frames
+  const fr = MCF[d < 0 ? 'L' : 'R'], f = mcIdx(t), i = Math.min(15, Math.floor(f)), u = f - i, g = (k) => fr[Math.max(0, Math.min(16, k))][j];
+  const p0 = g(i - 1), p1 = g(i), p2 = g(i + 1), p3 = g(i + 2), u2 = u * u, u3 = u2 * u;
+  for (let c = 0; c < 3; c++) out.setComponent(c, 0.5 * (2 * p1[c] + (-p0[c] + p2[c]) * u + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * u2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * u3));
+  return out;
+}
+const ROLLOVER_MC = { id: 'rollover', mc: true, name: '', T: 0.32, beatT: 0.16,
+  lane: [[0, 0], [0.04, 0.01], [0.13, 0.12], [0.2, 0.85], [0.25, 0.995], [0.32, 1]],
+  drop: [[0, 0], [0.08, -0.05], [0.25, -0.06], [0.32, 0]],
+  touches: [{ foot: 'l', surf: 'sole', t0: 0.04, t1: 0.28, mc: true, ball: [[0.04, 0, -0.4], [0.28, 0, -0.4]], hit: 1 }],
+  feet: {}, bones: {} };
+ROLLOVER_MC.beat = ROLLOVER_MC.beatT / ROLLOVER_MC.T;
+const mcRollSide = (d) => d < 0 ? 'r' : 'l';
+const _mv = new THREE.Vector3(), _mv2 = new THREE.Vector3(), _mo = new THREE.Quaternion();
+function mcGrounded(d, side, t) { return mcRaw(d, side === 'l' ? 0 : 1, t, _mv2).y < 0.075; }
+// foot orientation from the captured heel->toe vector (yaw + pitch), plus the sole-contact tilt
+function mcFootOri(d, side, t, out) {
+  const j = side === 'l' ? 0 : 1; mcRaw(d, 2 + j, t, _mv); mcRaw(d, 4 + j, t, _mv2); _mv2.sub(_mv);
+  const h = Math.hypot(_mv2.x, _mv2.z) || 1e-3;
+  let yaw = Math.atan2(-_mv2.x, -_mv2.z); yaw = Math.max(-0.6, Math.min(0.6, yaw)) * 0.7;
+  let pitch = Math.atan2(_mv2.y, h) - 0.18; pitch = Math.max(-0.5, Math.min(0.7, pitch));
+  if (side === mcRollSide(d)) { const tc = ROLLOVER_MC.touches[0], k = Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)); pitch = pitch * (1 - k) - 0.25 * k; } // heel up / toe down on the ball
+  return out.setFromEuler(_eu.set(pitch, yaw, 0, 'YXZ'));
+}
+// ankle target in G: captured ankle; the rolling foot is raised onto the top of the ball around the contact window
+function mcAnkle(d, side, t, out) {
+  mcRaw(d, side === 'l' ? 0 : 1, t, out); out.y += MC_Y;
+  if (side === mcRollSide(d)) {
+    const tc = ROLLOVER_MC.touches[0], k = ease(Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)));
+    mcFootOri(d, side, t, _mo); const cy = BR - surfOff(side, 'sole', _mv).applyQuaternion(_mo).y;
+    out.y += (Math.max(out.y, cy) - out.y) * k; if (k >= 1) out.y = cy;
+  }
+  out.y = Math.max(out.y, A - 0.01);
+  return out;
+}
 // retime every move to the duration measured frame-accurately in the FC 26 Arena POV reference (spec.md)
 const TREF = { rollover: 0.32, scissor: 0.60, roulette: 0.80, chop: 0.45, elastico: 0.50, croqueta: 0.45, rainbow: 1.05, heel: 0.40 };
 function retime(m, k) {
@@ -672,7 +716,7 @@ function startLaneMove(d) {
 }
 function startRoll(d) {
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
-  beginMove(); SK.m = ROLLOVER; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.rolls = (SK.rolls || 0) + 1;
+  beginMove(); SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.rolls = (SK.rolls || 0) + 1;
 }
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
 function pickMove() { let i; do { i = (Math.random() * MOVES.length) | 0; } while (i === SK.last && MOVES.length > 1); SK.last = i; return MOVES[i]; }
@@ -725,6 +769,7 @@ function b2g(bd, v) { const c = Math.cos(bd.spin), s = Math.sin(bd.spin), x = v.
 function g2b(bd, v) { const c = Math.cos(-bd.spin), s = Math.sin(-bd.spin), x = v.x - bd.px, z = v.z - bd.pz; v.x = x * c + z * s; v.z = -x * s + z * c; return v; }
 // foot orientation (desired) in G at time t, for the ACTUAL side
 function footOri(m, d, side, t, out) {
+  if (m.mc) return mcFootOri(d, side, t, out);
   const f = m.feet[d < 0 ? sw(side) : side] || {};
   let sp = 0; for (const tc of m.touches || []) if (tc.surf === 'sole' && tc.foot === (d < 0 ? sw(side) : side)) { const k = Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)); sp = Math.max(sp, 0.3 * k); }
   _eu.set(kf(t, f.pitch) + sp, d * kf(t, f.yaw) + bodyAt(m, d, t).spin, d * kf(t, f.roll), 'YXZ');
@@ -737,6 +782,7 @@ function touchesOf(m, d) {
 }
 // ball centre (G) along a touch's authored path
 function touchBall(m, d, tc, t, out) {
+  if (tc.mc) { mcAnkle(d, tc.side, t, out); mcFootOri(d, tc.side, t, _mo); out.add(surfOff(tc.side, tc.surf, _mv).applyQuaternion(_mo)); out.y = BR; return out; }
   const k = tc.ball; let i = 0; while (i < k.length - 1 && t > k[i + 1][0]) i++;
   const p0 = k[i], p1 = k[Math.min(i + 1, k.length - 1)], u = p1[0] > p0[0] ? Math.min(1, Math.max(0, (t - p0[0]) / (p1[0] - p0[0]))) : 0;
   const y0 = p0.length > 3 ? p0[2] : BR, z0 = p0.length > 3 ? p0[3] : p0[2], y1 = p1.length > 3 ? p1[2] : BR, z1 = p1.length > 3 ? p1[3] : p1[2];
@@ -772,6 +818,7 @@ function hermite(p0, v0, p1, v1, t0, t1, t, out) {
 function footTargetG(m, d, side, t, out) {
   const tc = touchesOf(m, d).find(tc => tc.side === side && t >= tc.t0 && t <= tc.t1);
   if (tc) return { tc, p: contactAnkle(m, d, tc, t, out) };
+  if (m.mc) return { tc: null, p: mcAnkle(d, side, t, out) };
   const ks = footKeys(m, d, side); let i = 0; while (i < ks.length - 2 && t > ks[i + 1].t) i++;
   if (t <= ks[0].t) out.copy(ks[0].p); else if (t >= ks[ks.length - 1].t) out.copy(ks[ks.length - 1].p);
   else hermite(ks[i].p, ks[i].v, ks[i + 1].p, ks[i + 1].v, ks[i].t, ks[i + 1].t, t, out);
@@ -850,6 +897,49 @@ function driveMocap() {
   }
   if (hero.current) hero.current.setEffectiveWeight(1 - w);
 }
+// ball on grass: rolling resistance + aerodynamic drag, decelerating the WORLD velocity (lateral wx, forward = run speed - vz)
+// a = ROLL.a0 + ROLL.cd * v^2  (a0 = 0.8 m/s^2 ~ mu_r 0.08 on short grass; cd = rho*Cd*A/(2m) = 1.2*0.25*0.038/(2*0.43) = 0.0133 /m)
+const ROLL = { a0: 0.8, cd: 0.0133, rf: 0.045, e: 0.35, ahead: 0.25 };
+const _fp = { l: [new THREE.Vector3(), new THREE.Vector3()], r: [new THREE.Vector3(), new THREE.Vector3()] }, _fpv = { l: null, r: null }, _fpt = { l: null, r: null };
+function ballDecel(v) { return ROLL.a0 + ROLL.cd * v * v; }
+function ballRoll(dt, lat) {
+  let wx = BS.wx || 0, u = S.speed - (BS.vz || 0); const sp = Math.hypot(wx, u);
+  if (sp > 1e-4) { const k = Math.max(0, 1 - ballDecel(sp) * dt / sp); wx *= k; u *= k; }
+  BS.wx = wx; BS.vz = S.speed - u;
+  BS.p.x += wx * dt - lat; BS.p.z += BS.vz * dt; BS.p.y = BR;
+  footCollide(dt, lat / dt);
+  // safety net only (counted): ball lost behind / far away from the runner
+  if (!SK.m && (BS.p.z > 0.1 || Math.abs(BS.p.x) > 0.9 || BS.p.z < -1.6)) { BS.assist = (BS.assist || 0) + dt; // steer back (critically damped), no snap
+    const wn = 6; BS.wx += ((0 - BS.p.x) * wn * wn - (BS.wx - (BS.latv || 0)) * 2 * wn) * dt; BS.vz += ((B0[2] - BS.p.z) * wn * wn - BS.vz * 2 * wn) * dt; }
+}
+// feet as capsules (ankle -> toe tip, radius rf): no interpenetration; a forward-swinging foot in the jog = a dribble touch
+function footCollide(dt, latv) {
+  const b = hero.bones;
+  for (const s of SIDES) {
+    const fo = b['foot_' + s], to = b['ball_' + s]; if (!fo || !to) continue;
+    const pa = fo.getWorldPosition(_fp[s][0]), pt = to.getWorldPosition(_fp[s][1]); hero.group.worldToLocal(pa); hero.group.worldToLocal(pt);
+    pt.addScaledVector(_a.subVectors(pt, pa), 0.5);
+    const ab = _b.subVectors(pt, pa), u = Math.max(0, Math.min(1, _c.subVectors(BS.p, pa).dot(ab) / ab.lengthSq())), q = _d.copy(pa).addScaledVector(ab, u);
+    const prev = _fpv[s], ptp = _fpt[s]; _fpv[s] = q.clone(); _fpt[s] = pt.clone(); if (!prev || !ptp || dt <= 0) continue;
+    const regather = !SK.m && BS.vz > -0.3 && ptp.z > BS.p.z - BR && pt.z <= BS.p.z - BR && Math.abs(pt.x - BS.p.x) < BR + ROLL.rf + 0.12 && pt.y < 0.34;
+    const n = _w1.subVectors(BS.p, q), d3 = n.length(), R = BR + ROLL.rf; if (d3 >= R && !regather) continue;
+    n.y = 0; if (n.lengthSq() < 1e-8) n.set(0, 0, -1); n.normalize();
+    if (d3 < R) BS.p.addScaledVector(n, R - d3); // push out
+    const vf = _w2.subVectors(q, prev).divideScalar(dt), vrx = BS.wx - latv, vrz = BS.vz;
+    const app = (vf.x - vrx) * n.x + (vf.z - vrz) * n.z;
+    const dribble = !SK.m && BS.vz > -0.3 && vf.z < -0.2 && q.z > BS.p.z - 0.05; // forward-swinging foot behind/beside the ball
+    if (app <= 0 && !dribble && !regather) continue;
+    // a planting/stepping foot only nudges the ball (soft contact, approach capped at 1.2 m/s); kicks are the authored touches
+    const ap = Math.min(0.3, Math.max(0, app)), ee = 0;
+    let nx = vrx + n.x * (1 + ee) * ap, nz = vrz + n.z * (1 + ee) * ap;
+    if (dribble || regather) { // dribble touch: push it ~ROLL.ahead m ahead (it rolls back to the foot under grass friction), steer to centre
+      const a = ballDecel(S.speed); nz = -Math.min(3.5, Math.sqrt(2 * a * ROLL.ahead)); const tr = 2 * -nz / a; nx = Math.max(-2, Math.min(2, -BS.p.x / tr));
+      BS.touches = (BS.touches || 0) + 1; if (regather) BS.gap = Math.max(BS.gap || 0, Math.abs(pt.x - BS.p.x) - BR); BS.reach = false;
+      if (BS.rel && !BS.rel.lead) BS.rel.lead = { side: s, dt: +(S.t - BS.rel.t).toFixed(3), x: +(BS.p.x * BS.rel.d).toFixed(3), ahead: +(q.z - BS.p.z).toFixed(3) };
+    }
+    BS.wx = nx + latv; BS.vz = nz; BS.hits = (BS.hits || 0) + 1;
+  }
+}
 function applySkillPose(dt) {
   const fb = footBall; if (!hero || !fb || !hero.bones.foot_l) return;
   if (!FOOT_REL.l) calibrateFeet();
@@ -889,7 +979,13 @@ function applySkillPose(dt) {
       _hint[s].set(0, 0, -1).applyQuaternion(_gq).add(_a.set(0, 0.25, 0));
       for (const sk of list) {
         const w = moveW(sk); if (w <= 0) continue; const t = Math.min(1, sk.t) * sk.m.T;
-        footTargetG(sk.m, sk.d, s, t, _mp); hero.group.localToWorld(_mp);
+        footTargetG(sk.m, sk.d, s, t, _mp);
+        if (sk.m.mc && sk.fade === 0 && s !== mcRollSide(sk.d)) { // plant lock: grounded support foot holds its lane position
+          sk.lock = sk.lock || {}; const L = sk.lock[s];
+          if (mcGrounded(sk.d, s, t)) { if (!L) sk.lock[s] = { x: _mp.x, px: P.x, z: _mp.z }; else { const lx = L.x - (P.x - L.px), cx = Math.max(_mp.x - 0.22, Math.min(_mp.x + 0.22, lx)), wxp = P.x + cx; if (L.w !== undefined && sk === SK) BS.slide = (BS.slide || 0) + Math.abs(wxp - L.w); L.w = wxp; _mp.x = cx; _mp.z = L.z; } }
+          else sk.lock[s] = null;
+        }
+        hero.group.localToWorld(_mp);
         footOri(sk.m, sk.d, s, t, _mq); _mq.premultiply(_gq).multiply(FOOT_REL[s]);
         _tw[s].lerp(_mp, w); _tq[s].slerp(_mq, w);
         footOri(sk.m, sk.d, s, t, _q3); _hint[s].lerp(_a.set(0, 0.2, -1).applyQuaternion(_q3).applyQuaternion(_gq), w);
@@ -897,35 +993,46 @@ function applySkillPose(dt) {
       ikLeg(s, _tw[s], _tq[s], _hint[s]);
     }
   }
-  // ---- ball ----
-  const dz = S.speed * dt, lat = P.x - BS.lastX; BS.lastX = P.x;
+  // re-gather: after a move the nearer foot reaches out (<=0.3 m) so its next forward swing meets the rolling ball
+  if (!list.length && (BS.reach || Math.abs(BS.p.x) > 0.1) && hero.bones.foot_l) {
+    BS.reachW = Math.min(1, (BS.reachW || 0) + dt / 0.1);
+    let best = null, bd = 9; for (const s of SIDES) { b['foot_' + s].getWorldPosition(_a); hero.group.worldToLocal(_a); const dd = Math.abs(_a.x - BS.p.x); if (dd < bd) { bd = dd; best = s; } }
+    BS.reachSide = best; const fo = b['foot_' + best]; fo.getWorldPosition(_mp); hero.group.worldToLocal(_mp);
+    const px = BS.p.x + ((BS.wx || 0) - (BS.latv || 0)) * 0.06, want = px - Math.sign(px) * (BR + ROLL.rf + 0.03), off = Math.max(-0.4, Math.min(0.4, want - _mp.x)) * ease(BS.reachW);
+    if (Math.abs(off) > 0.005) { _mp.x += off; hero.group.localToWorld(_mp); fo.getWorldQuaternion(_mq); _hint.l.set(0, 0.25, -1).applyQuaternion(_gq); ikLeg(best, _mp, _mq.clone(), _hint.l.clone()); }
+  } else BS.reachW = 0;
+  // ---- ball: authored contact (pinned to the real sole) + rolling physics everywhere else ----
+  const dz = S.speed * dt, lat = dt > 0 ? P.x - BS.lastX : 0; if (dt > 0) BS.lastX = P.x; // (dt=0 frames: carry the lane shift to the next real step)
   const old = _np.copy(BS.p);
-  let pinned = null;
-  if (SK.m) {
-    const t = Math.min(1, SK.t) * SK.m.T, tc = touchesOf(SK.m, SK.d).find(tc => tc.side && t >= tc.t0 && t <= tc.t1);
-    if (tc && SK.fade === 0) {
+  let pinned = null, phys = true;
+  if (SK.m && SK.fade === 0) {
+    const t = Math.min(1, SK.t) * SK.m.T, tcs = touchesOf(SK.m, SK.d), tc = tcs.find(tc => tc.side && t >= tc.t0 && t <= tc.t1);
+    const last = tcs.reduce((a, c) => Math.max(a, c.t1), 0);
+    if (tc) {
       // contact: pin the ball to the ACTUAL foot surface after IK (exact contact even if IK clamps or blends)
       const fo = b['foot_' + tc.side]; fo.getWorldPosition(_bw); fo.getWorldQuaternion(_q1); _q1.multiply(_q2.copy(FOOT_REL[tc.side]).invert());
       _bw.add(surfOff(tc.side, tc.surf, _c).applyQuaternion(_q1)); hero.group.worldToLocal(_bw); _bw.y = Math.max(BR, _bw.y);
-      BS.p.copy(_bw); pinned = tc;
-    } else if (SK.fade === 0) freeBall(SK, t, BS.p);
-    else BS.p.lerp(_a.set(B0[0], BR, B0[2]), Math.min(1, dt * 6));
-  } else {
-    // dribble: small pushes ahead in rhythm with the jog, critically damped spring toward the spot
-    const tgt = _a.set(B0[0], BR, B0[2] - 0.04 * Math.max(0, Math.sin(S.t * 9.4)));
-    const wn = 11, acc = _b.subVectors(tgt, BS.p).multiplyScalar(wn * wn).addScaledVector(BS.v, -2 * wn);
-    BS.v.addScaledVector(acc, dt); BS.p.addScaledVector(BS.v, dt); if (BS.p.y < BR) BS.p.y = BR;
+      BS.p.copy(_bw); pinned = tc; phys = false;
+    } else if (t < last) { freeBall(SK, t, BS.p); phys = false; }
   }
-  if (SK.m && dt > 0) BS.v.subVectors(BS.p, old).divideScalar(dt);
-  let lead = 0;
-  if (SK.m && SK.fade === 0 && SK.m.lane && !pinned) {
-    const t = Math.min(1, SK.t) * SK.m.T, hit = (SK.m.touches || []).find(tc => tc.hit);
-    if (hit && t > hit.t1) { const r = Math.min(1, (t - hit.t1) / 0.06); lead = (laneAt(t + 0.12, SK.m.lane) - laneAt(t, SK.m.lane)) * (P.toX - P.fromX) * r * r * (3 - 2 * r); }
+  if (phys && dt > 0) {
+    if (!BS.phys) { // release: take over the ball's actual velocity (sole velocity at release + the body's lane shift), world frame
+      // a ball released from under a SOLE rolls with its centre at half the sole's ground speed (top of a rolling ball moves at 2v)
+      const half = BS.pin === 'sole' ? 0.5 : 1;
+      BS.wx = ((BS.vp ? (BS.v.x + BS.vp.x) / 2 : BS.v.x) + (BS.latv || 0)) * half; BS.vz = (BS.vp ? (BS.v.z + BS.vp.z) / 2 : BS.v.z) * half;
+      // forward: the capture ran at ~3 m/s, the game at 13-30 m/s, so the sole's backward drag is clamped to keep the ball in front
+      BS.vz = Math.max(-1.2, Math.min(0.2, BS.vz));
+      if (SK.rel) { BS.rel = { t: S.t, x: +(BS.p.x * SK.rel).toFixed(3), wx: +(BS.wx * SK.rel).toFixed(2), vz: +BS.vz.toFixed(2), latv: +((BS.latv || 0) * SK.rel).toFixed(2), d: SK.rel }; SK.rel = 0; }
+      BS.reach = true;
+    }
+    ballRoll(dt, lat);
   }
-  const dl = lead - (BS.lead || 0); BS.lead = lead;
-  fb.position.copy(BS.p); fb.position.x += lead;
-  // rolling: ground contact => spin about (up x travel), travel includes the run speed and the lane shift
-  const tx = BS.p.x - old.x + lat + dl, tz = BS.p.z - old.z - dz, dist = Math.hypot(tx, tz);
+  BS.phys = phys; BS.pin = pinned ? pinned.surf : phys ? BS.pin : null;
+  if (SK.m && SK.m.mc && pinned) SK.rel = SK.d;
+  if (dt > 0) { BS.vp = BS.v.clone(); BS.v.subVectors(BS.p, old).divideScalar(dt); BS.latv = lat / dt; }
+  fb.position.copy(BS.p);
+  // rolling without slipping: spin axis = up x ground travel (incl. run speed and lane shift), angle = distance / radius
+  const tx = BS.p.x - old.x + lat, tz = BS.p.z - old.z - dz, dist = Math.hypot(tx, tz);
   if (BS.p.y < BR + 0.03 && dist > 1e-5) { _a.set(tz, 0, -tx).normalize(); _q1.setFromAxisAngle(_a, dist / BR); fb.quaternion.premultiply(_q1); }
   else if (BS.p.y >= BR + 0.03) { _q1.setFromAxisAngle(_a.set(1, 0, 0), dt * 12); fb.quaternion.premultiply(_q1); }
   SK.pinned = pinned ? pinned.side + ':' + pinned.surf : null;
@@ -967,6 +1074,8 @@ function updatePlay(dt, rdt = dt) {
   S.t += dt;
   S.speed = Math.min(MAX_SPEED, S.speed + ACCEL * dt * (S.speed < 20 ? 1.4 : 0.8));
   const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30);
+  // move clock first, so the body's lane position and the pose/ball solved this frame use the same move time
+  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt * (SK.rate || 1) / SK.m.T; if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; } } }
   // lanes
   if (SK.m && SK.fade === 0 && SK.m.lane && P.laneT < 1) {
     // skill moves travel across THROUGH the move: lateral position follows the move's own lane curve
@@ -976,7 +1085,6 @@ function updatePlay(dt, rdt = dt) {
     P.laneT = Math.min(1, P.laneT + rdt / LANE_TIME);
     P.x = P.fromX + (P.toX - P.fromX) * easeOut(P.laneT);
   }
-  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt * (SK.rate || 1) / SK.m.T; if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; } } }
   // vertical
   if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
   else P.sinceGround += dt;
@@ -1056,7 +1164,7 @@ function frame() {
 window.__spawnObstacleAhead = (type = 'barrier', z = -6) => { const o = get(type); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return o; };
 window.__spawnRivalAhead = (z = -4) => { const o = get('rival'); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); };
 window.__cam = camera;
-window.__fireRush = { S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
+window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
 
 (async () => {
   await loadAssets();
