@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#c8102e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Fire Rush</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/jsm/"}}</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="hud" class="hidden">
+  <div class="pill" id="hScore">0</div>
+  <div class="pill ball" id="hBalls">⚽ 0</div>
+  <div class="pill small" id="hDist">0 m</div>
+</div>
+<div id="loading" class="overlay">
+  <canvas class="emblem" width="160" height="160"></canvas>
+  <h1>FIRE RUSH</h1>
+  <div class="bar"><div id="barFill"></div></div>
+  <p id="loadMsg">Loading the squad…</p>
+</div>
+<div id="title" class="overlay hidden">
+  <div class="top"><canvas class="emblem" width="160" height="160"></canvas>
+  <h1>FIRE <span>RUSH</span></h1>
+  <p class="sub">Chicago street-soccer endless runner</p></div>
+  <div class="top" style="gap:12px">
+  <button id="startBtn">TAP TO PLAY</button>
+  <p class="help">Swipe ← → to switch lanes · ↑ jump · ↓ slide<br>Keyboard: Arrows / WASD · Space jump</p>
+  <p class="best">Best: <b id="tBest">0</b></p>
+  <p id="warn" class="warn hidden"></p></div>
+</div>
+<div id="over" class="overlay hidden">
+  <h2>TACKLED!</h2>
+  <div class="stats"><div><small>SCORE</small><b id="oScore">0</b></div><div><small>BALLS</small><b id="oBalls">0</b></div><div><small>DISTANCE</small><b id="oDist">0</b></div></div>
+  <p class="best" id="oBest">Best: 0</p>
+  <button id="againBtn">PLAY AGAIN</button>
+</div>
+<script type="module" src="main.js"></script>
+</body></html>
