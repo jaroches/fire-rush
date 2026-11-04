@@ -186,8 +186,8 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair, roll] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=10').catch(e => { console.warn('mocap roll-over clip missing', e); return null; })]);
-    if (roll) anims.animations.push(...roll.animations);
+    const [hero, anims, hair, roll, chopC] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=11').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/chop.glb?v=11').catch(() => null)]);
+    if (roll) anims.animations.push(...roll.animations); if (chopC) anims.animations.push(...chopC.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
     let head = null; root.traverse(o => { if (o.isBone && o.name === 'Head') head = o; });
@@ -400,7 +400,7 @@ function resetGame() {
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
   Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, beaten: 0 });
   SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SM.g = 1; SM.t = SM.delay = -1;
-  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null;
+  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0;
 }
 
 function spawnRow(z) {
@@ -637,10 +637,10 @@ const ROLLOVER = { id: 'rollover', name: '', T: 0.32, beatT: 0.12,
 // L = moving LEFT (right sole rolls), R = mirrored (left sole rolls).
 const MCF = {"L":[[[-0.0374,0.1132,-0.4018],[0.2548,0.1264,0.1873],[-0.0172,0.077,-0.4039],[0.2641,0.0921,0.1638],[-0.0263,0.0933,-0.4818],[0.3223,0.1055,0.0716]],[[-0.0551,0.1061,-0.4064],[0.2896,0.1481,0.2355],[-0.0344,0.0691,-0.4106],[0.2962,0.1132,0.2125],[-0.0241,0.0729,-0.4863],[0.3671,0.1228,0.1244]],[[-0.0604,0.0817,-0.3364],[0.347,0.1615,0.1958],[-0.0386,0.044,-0.337],[0.3534,0.1261,0.1664],[-0.0038,0.0321,-0.4177],[0.444,0.1447,0.0846]],[[-0.032,0.0603,-0.2411],[0.4109,0.1862,0.0645],[-0.0083,0.0223,-0.2365],[0.4202,0.1525,0.0265],[0.0376,0.0,-0.3309],[0.5235,0.191,-0.0512]],[[0.0073,0.0598,-0.212],[0.4542,0.2288,-0.0877],[0.0323,0.0221,-0.2079],[0.4673,0.1983,-0.1326],[0.0752,0.0007,-0.307],[0.5774,0.258,-0.215]],[[0.0346,0.0647,-0.213],[0.462,0.2632,-0.2119],[0.0598,0.027,-0.2121],[0.477,0.2345,-0.263],[0.1007,0.0086,-0.3065],[0.5943,0.3074,-0.3526]],[[0.0619,0.065,-0.1929],[0.4463,0.2709,-0.2768],[0.0888,0.0269,-0.1939],[0.4615,0.242,-0.3305],[0.1358,0.0155,-0.2868],[0.577,0.3165,-0.4221]],[[0.1038,0.0649,-0.1833],[0.4194,0.27,-0.2951],[0.1348,0.0264,-0.1856],[0.4333,0.2397,-0.3494],[0.1979,0.0314,-0.2849],[0.5355,0.306,-0.4432]],[[0.1444,0.0663,-0.223],[0.3616,0.2823,-0.2848],[0.1802,0.0279,-0.2299],[0.3694,0.2524,-0.3368],[0.2598,0.0521,-0.3367],[0.4689,0.3006,-0.4316]],[[0.1656,0.084,-0.2869],[0.2249,0.3014,-0.3035],[0.2055,0.049,-0.2999],[0.2228,0.2741,-0.3496],[0.2823,0.083,-0.4002],[0.3203,0.2898,-0.4399]],[[0.1788,0.1179,-0.2977],[0.0621,0.3089,-0.3633],[0.2223,0.0888,-0.3123],[0.0507,0.2816,-0.4056],[0.2868,0.12,-0.3991],[0.1228,0.2733,-0.4972]],[[0.1921,0.1375,-0.2396],[-0.0341,0.2987,-0.3813],[0.2362,0.112,-0.2533],[-0.0513,0.2689,-0.42],[0.2882,0.1345,-0.3295],[-0.007,0.2615,-0.5163]],[[0.1942,0.1253,-0.1644],[-0.0843,0.2635,-0.3376],[0.2373,0.1,-0.1775],[-0.1028,0.2321,-0.3729],[0.2763,0.1214,-0.245],[-0.0614,0.236,-0.4715]],[[0.1626,0.0949,-0.1222],[-0.1507,0.2101,-0.2914],[0.2043,0.0676,-0.1335],[-0.1708,0.177,-0.3259],[0.238,0.0944,-0.198],[-0.1178,0.1836,-0.4274]],[[0.1195,0.0643,-0.0951],[-0.1867,0.1479,-0.2383],[0.1593,0.0341,-0.103],[-0.2087,0.113,-0.2722],[0.1991,0.055,-0.1706],[-0.1499,0.1085,-0.3758]],[[0.1096,0.0519,-0.0339],[-0.1558,0.0941,-0.1529],[0.1502,0.0205,-0.0364],[-0.1767,0.0584,-0.1842],[0.1899,0.0237,-0.0974],[-0.119,0.0405,-0.2868]],[[0.112,0.0585,0.0595],[-0.0993,0.0681,-0.065],[0.1546,0.0284,0.0659],[-0.1165,0.0328,-0.0937],[0.1819,0.0147,0.027],[-0.0591,0.0089,-0.1887]]],"R":[[[-0.2781,0.1068,0.2044],[0.0408,0.1529,-0.4386],[-0.2883,0.0674,0.1788],[0.0187,0.1092,-0.4409],[-0.3518,0.07,0.0781],[0.0287,0.1289,-0.5259]],[[-0.3161,0.1233,0.2571],[0.0602,0.1489,-0.4436],[-0.3233,0.0838,0.232],[0.0375,0.1042,-0.4482],[-0.4007,0.0796,0.1357],[0.0263,0.1062,-0.5308]],[[-0.3787,0.1261,0.2138],[0.0659,0.1233,-0.3672],[-0.3858,0.0861,0.1816],[0.0421,0.0777,-0.3678],[-0.4846,0.0876,0.0924],[0.0041,0.0574,-0.4559]],[[-0.4485,0.1398,0.0704],[0.0349,0.0941,-0.2631],[-0.4587,0.1011,0.0289],[0.0091,0.0477,-0.2581],[-0.5714,0.1216,-0.0558],[-0.0411,0.0138,-0.3611]],[[-0.4957,0.1773,-0.0957],[-0.008,0.0854,-0.2314],[-0.5101,0.1412,-0.1448],[-0.0352,0.0391,-0.227],[-0.6302,0.1836,-0.2347],[-0.0821,0.0068,-0.3351]],[[-0.5043,0.2132,-0.2312],[-0.0377,0.0851,-0.2325],[-0.5207,0.1787,-0.2871],[-0.0653,0.0388,-0.2315],[-0.6487,0.234,-0.3849],[-0.1099,0.0102,-0.3345]],[[-0.4871,0.2249,-0.3022],[-0.0676,0.0798,-0.2106],[-0.5038,0.1901,-0.3608],[-0.0969,0.0326,-0.2116],[-0.6298,0.2475,-0.4607],[-0.1482,0.0104,-0.313]],[[-0.4578,0.2294,-0.3221],[-0.1133,0.071,-0.2001],[-0.473,0.1935,-0.3813],[-0.1472,0.0226,-0.2026],[-0.5844,0.2446,-0.4838],[-0.216,0.0149,-0.311]],[[-0.3947,0.2549,-0.3108],[-0.1576,0.0641,-0.2434],[-0.4032,0.2206,-0.3676],[-0.1966,0.0148,-0.2509],[-0.5118,0.2526,-0.4711],[-0.2835,0.0247,-0.3675]],[[-0.2455,0.304,-0.3313],[-0.1808,0.079,-0.3131],[-0.2432,0.2747,-0.3816],[-0.2243,0.0325,-0.3273],[-0.3496,0.2716,-0.4801],[-0.3081,0.0538,-0.4368]],[[-0.0678,0.3459,-0.3966],[-0.1952,0.1133,-0.325],[-0.0553,0.3185,-0.4427],[-0.2426,0.0725,-0.3409],[-0.1341,0.2945,-0.5427],[-0.313,0.0931,-0.4357]],[[0.0372,0.3547,-0.4162],[-0.2097,0.1319,-0.2616],[0.056,0.3258,-0.4585],[-0.2578,0.095,-0.2765],[0.0076,0.3085,-0.5635],[-0.3145,0.1088,-0.3597]],[[0.092,0.3267,-0.3685],[-0.212,0.1181,-0.1794],[0.1122,0.2963,-0.407],[-0.2591,0.0816,-0.1938],[0.067,0.2919,-0.5147],[-0.3016,0.0969,-0.2674]],[[0.1645,0.2822,-0.3181],[-0.1775,0.0915,-0.1334],[0.1864,0.2502,-0.3557],[-0.223,0.0531,-0.1457],[0.1286,0.2464,-0.4665],[-0.2598,0.0754,-0.2161]],[[0.2037,0.2217,-0.2602],[-0.1304,0.0671,-0.1038],[0.2278,0.1882,-0.2971],[-0.1738,0.0259,-0.1125],[0.1636,0.1711,-0.4102],[-0.2173,0.0404,-0.1862]],[[0.17,0.1566,-0.1668],[-0.1196,0.0556,-0.037],[0.1929,0.122,-0.2011],[-0.1639,0.0129,-0.0397],[0.1298,0.0904,-0.3131],[-0.2072,0.0081,-0.1063]],[[0.1084,0.1166,-0.071],[-0.1223,0.0622,0.065],[0.1272,0.0816,-0.1023],[-0.1688,0.0206,0.072],[0.0645,0.0436,-0.206],[-0.1985,0.0,0.0295]]]};
 const MC_Y = A - 0.055;                                   // captured flat-foot ankle height -> rig ankle height
-const MC_WARP = [[0, 0], [0.04, 5], [0.28, 13], [0.32, 16]]; // game time -> capture frame (contact = capture frames 5..12)
-function mcIdx(t) { const k = MC_WARP; if (t <= 0) return 0; for (let i = 1; i < k.length; i++) if (t <= k[i][0]) return k[i - 1][1] + (k[i][1] - k[i - 1][1]) * (t - k[i - 1][0]) / (k[i][0] - k[i - 1][0]); return 16; }
-function mcRaw(d, j, t, out) { // Catmull-Rom through the captured frames
-  const fr = MCF[d < 0 ? 'L' : 'R'], f = mcIdx(t), i = Math.min(15, Math.floor(f)), u = f - i, g = (k) => fr[Math.max(0, Math.min(16, k))][j];
+// per move: m.F = captured frames {L,R}, m.warp = game time -> capture frame index
+function mcIdx(m, t) { const k = m.warp, n = m.F.L.length - 1; if (t <= 0) return 0; for (let i = 1; i < k.length; i++) if (t <= k[i][0]) return k[i - 1][1] + (k[i][1] - k[i - 1][1]) * (t - k[i - 1][0]) / (k[i][0] - k[i - 1][0]); return n; }
+function mcRaw(m, d, j, t, out) { // Catmull-Rom through the captured frames
+  const fr = m.F[d < 0 ? 'L' : 'R'], n = fr.length - 1, f = mcIdx(m, t), i = Math.min(n - 1, Math.floor(f)), u = f - i, g = (k) => fr[Math.max(0, Math.min(n, k))][j];
   const p0 = g(i - 1), p1 = g(i), p2 = g(i + 1), p3 = g(i + 2), u2 = u * u, u3 = u2 * u;
   for (let c = 0; c < 3; c++) out.setComponent(c, 0.5 * (2 * p1[c] + (-p0[c] + p2[c]) * u + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * u2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * u3));
   return out;
@@ -649,27 +649,42 @@ const ROLLOVER_MC = { id: 'rollover', mc: true, name: '', T: 0.32, beatT: 0.16,
   lane: [[0, 0], [0.04, 0.01], [0.13, 0.12], [0.2, 0.85], [0.25, 0.995], [0.32, 1]],
   drop: [[0, 0], [0.08, -0.05], [0.25, -0.06], [0.32, 0]],
   touches: [{ foot: 'l', surf: 'sole', t0: 0.04, t1: 0.28, mc: true, ball: [[0.04, 0, -0.4], [0.28, 0, -0.4]], hit: 1 }],
-  feet: {}, bones: {} };
+  feet: {}, bones: {}, F: MCF, warp: [[0, 0], [0.04, 5], [0.28, 13], [0.32, 16]], clip: 'Rollover' };
 ROLLOVER_MC.beat = ROLLOVER_MC.beatT / ROLLOVER_MC.T;
-const mcRollSide = (d) => d < 0 ? 'r' : 'l';
+// RONALDO CHOP (mocap): Zaleto slow-mo tutorial (youtube pBXlfYAYmk8, 3.0-9.0 s), capture frames 75..230 @50 fps -> 31 keys.
+// Authored for d=+1: the LEFT leg lifts, swings BEHIND the planted right leg, its INSIDE chops the ball right (contact authored,
+// approach / recovery / support leg / upper body captured). L set = moving left (right foot chops).
+const CHOP_MC = { id: 'chop', mc: true, name: 'RONALDO CHOP!', sub: 'CR7', T: 0.45, beatT: 0.2, clip: 'Chop', F: {"L":[[[-0.1628,0.1423,-0.3406],[0.1233,0.0547,0.1637],[-0.1466,0.1052,-0.3584],[0.1165,0.0239,0.1412],[-0.0878,0.1367,-0.4988],[0.201,0.0234,0.0671]],[[-0.16,0.1489,-0.4295],[0.1286,0.0426,0.1462],[-0.1439,0.1117,-0.4553],[0.1242,0.0106,0.1187],[-0.0896,0.167,-0.6008],[0.2123,0.0192,0.0317]],[[-0.1429,0.1627,-0.481],[0.1233,0.0365,0.175],[-0.1243,0.1276,-0.5124],[0.1187,0.0041,0.1469],[-0.0684,0.2016,-0.6554],[0.2153,0.0206,0.0569]],[[-0.1436,0.1867,-0.5191],[0.1249,0.0422,0.224],[-0.1236,0.1547,-0.555],[0.1183,0.0106,0.1979],[-0.0671,0.2506,-0.6938],[0.2185,0.0253,0.1058]],[[-0.1428,0.2073,-0.5167],[0.1371,0.0556,0.2874],[-0.123,0.1758,-0.5524],[0.1289,0.0261,0.2651],[-0.0707,0.2604,-0.6912],[0.2258,0.0284,0.171]],[[-0.1433,0.2239,-0.4995],[0.148,0.0664,0.3746],[-0.1238,0.1921,-0.5329],[0.138,0.0388,0.3571],[-0.0712,0.2551,-0.6715],[0.2296,0.0338,0.2609]],[[-0.139,0.2212,-0.4758],[0.1366,0.0888,0.4268],[-0.118,0.1886,-0.5055],[0.1216,0.0639,0.4147],[-0.0632,0.2331,-0.6446],[0.1959,0.0439,0.3204]],[[-0.1139,0.2065,-0.4136],[0.1202,0.134,0.4543],[-0.0917,0.1721,-0.4362],[0.1012,0.1128,0.4461],[-0.0495,0.1962,-0.5855],[0.1541,0.0696,0.3593]],[[-0.0894,0.1911,-0.365],[0.0955,0.1695,0.4556],[-0.0667,0.1558,-0.3825],[0.076,0.1504,0.4533],[-0.0338,0.1638,-0.5324],[0.1157,0.0991,0.3828]],[[-0.0973,0.1915,-0.3672],[0.0727,0.1866,0.4733],[-0.0759,0.1569,-0.3842],[0.0501,0.1681,0.4748],[-0.0421,0.1627,-0.5347],[0.0781,0.1113,0.4126]],[[-0.0977,0.1842,-0.3477],[0.0665,0.1975,0.4979],[-0.0774,0.1493,-0.3627],[0.0411,0.1805,0.5026],[-0.0402,0.1473,-0.5111],[0.0599,0.1149,0.4443]],[[-0.0796,0.161,-0.2977],[0.0658,0.2327,0.4891],[-0.0586,0.125,-0.3086],[0.039,0.2193,0.5002],[-0.012,0.1159,-0.4527],[0.0624,0.1517,0.455]],[[-0.0393,0.1151,-0.2006],[0.0468,0.294,0.4021],[-0.0153,0.0769,-0.2053],[0.0174,0.286,0.4157],[0.0459,0.0607,-0.3352],[0.0281,0.2146,0.4032]],[[-0.0321,0.1003,-0.1684],[0.0309,0.3267,0.3473],[-0.007,0.0617,-0.1714],[0.0002,0.3196,0.3613],[0.0632,0.0378,-0.2959],[0.0096,0.2439,0.3578]],[[-0.0449,0.0973,-0.1669],[0.0109,0.3407,0.2964],[-0.0179,0.0592,-0.1698],[-0.0201,0.3324,0.3098],[0.055,0.0309,-0.2916],[-0.0072,0.2552,0.3081]],[[-0.0624,0.0874,-0.1558],[0.0008,0.3348,0.2559],[-0.0347,0.0495,-0.1575],[-0.0307,0.3253,0.2683],[0.0487,0.0224,-0.2802],[-0.0187,0.2421,0.2644]],[[-0.0711,0.0768,-0.1363],[0.0102,0.3062,0.2179],[-0.0433,0.0394,-0.1359],[-0.0197,0.2928,0.2275],[0.0459,0.0167,-0.2538],[-0.001,0.2148,0.2183]],[[-0.0746,0.0685,-0.1233],[0.0372,0.2808,0.207],[-0.0479,0.0315,-0.1222],[0.0097,0.2641,0.2144],[0.0428,0.0112,-0.2341],[0.0419,0.1911,0.2034]],[[-0.0871,0.0694,-0.1279],[0.0938,0.2634,0.2282],[-0.0636,0.0321,-0.1288],[0.071,0.2443,0.2351],[0.0318,0.0158,-0.24],[0.1204,0.1754,0.2285]],[[-0.0987,0.0751,-0.1349],[0.1358,0.2383,0.1584],[-0.0766,0.037,-0.137],[0.1183,0.2151,0.1584],[0.0188,0.0233,-0.2439],[0.1951,0.1644,0.1348]],[[-0.095,0.0633,-0.0974],[0.1479,0.2331,0.0345],[-0.071,0.0237,-0.0956],[0.1333,0.2087,0.0253],[0.0091,0.0033,-0.1939],[0.2228,0.1761,-0.0213]],[[-0.1192,0.0623,-0.0683],[0.2117,0.2121,0.0297],[-0.0971,0.023,-0.0633],[0.2002,0.1876,0.0132],[-0.0317,0.0,-0.1636],[0.2932,0.1687,-0.0425]],[[-0.1321,0.0794,-0.0653],[0.3199,0.1903,0.0596],[-0.1131,0.0421,-0.0619],[0.3153,0.1653,0.0367],[-0.0487,0.0282,-0.1703],[0.4157,0.1668,-0.0215]],[[-0.1431,0.0943,-0.0992],[0.421,0.1843,0.0388],[-0.1251,0.0584,-0.0995],[0.4235,0.1608,0.0097],[-0.0623,0.0541,-0.2237],[0.5147,0.1824,-0.0569]],[[-0.1134,0.0879,-0.1103],[0.5048,0.183,0.0364],[-0.0946,0.0527,-0.1161],[0.5149,0.1604,0.0048],[-0.0289,0.0626,-0.2511],[0.605,0.1963,-0.0643]],[[-0.1171,0.0915,-0.1953],[0.5132,0.1815,-0.0101],[-0.1002,0.0571,-0.2113],[0.5242,0.159,-0.0461],[-0.0404,0.0897,-0.3528],[0.62,0.2176,-0.1169]],[[-0.1238,0.1063,-0.2782],[0.4571,0.1788,-0.0626],[-0.1055,0.073,-0.299],[0.4649,0.1559,-0.0992],[-0.0538,0.1162,-0.4378],[0.5485,0.2119,-0.1684]],[[-0.0684,0.1005,-0.2711],[0.3683,0.1842,-0.1079],[-0.0429,0.0675,-0.2886],[0.3723,0.1616,-0.142],[0.0028,0.1002,-0.423],[0.425,0.1977,-0.2135]],[[-0.0151,0.1127,-0.2835],[0.3197,0.1816,-0.1237],[0.0173,0.0826,-0.299],[0.3221,0.1588,-0.1565],[0.0588,0.1059,-0.4329],[0.3594,0.1829,-0.2309]],[[0.001,0.1619,-0.3444],[0.3003,0.1876,-0.1244],[0.0373,0.1349,-0.3598],[0.3022,0.1641,-0.1558],[0.0786,0.1482,-0.489],[0.3472,0.1839,-0.2278]],[[0.0211,0.1979,-0.405],[0.2587,0.1964,-0.1275],[0.0585,0.1717,-0.4232],[0.2582,0.1729,-0.1579],[0.082,0.1785,-0.5457],[0.3146,0.1862,-0.2257]]],"R":[[[-0.1202,0.0511,0.1596],[0.1586,0.1894,-0.332],[-0.1135,0.0223,0.1376],[0.1428,0.1502,-0.3493],[-0.1959,0.0062,0.0654],[0.0856,0.17,-0.4862]],[[-0.1253,0.0383,0.1425],[0.1559,0.1952,-0.4186],[-0.1211,0.0079,0.1157],[0.1403,0.156,-0.4438],[-0.2069,0.0,0.0309],[0.0873,0.1999,-0.5855]],[[-0.1201,0.0333,0.1706],[0.1393,0.2056,-0.4688],[-0.1157,0.0026,0.1431],[0.1211,0.1679,-0.4994],[-0.2098,0.0008,0.0555],[0.0666,0.2297,-0.6388]],[[-0.1218,0.0386,0.2183],[0.1399,0.229,-0.5059],[-0.1153,0.009,0.1929],[0.1205,0.1942,-0.5409],[-0.2129,0.0048,0.1031],[0.0654,0.2772,-0.6762]],[[-0.1336,0.0494,0.2801],[0.1392,0.249,-0.5036],[-0.1256,0.0222,0.2584],[0.1199,0.2147,-0.5384],[-0.2201,0.0064,0.1666],[0.0689,0.2874,-0.6737]],[[-0.1443,0.0578,0.3651],[0.1396,0.2653,-0.4869],[-0.1345,0.0328,0.348],[0.1207,0.2307,-0.5194],[-0.2238,0.011,0.2543],[0.0694,0.2824,-0.6545]],[[-0.1332,0.0819,0.416],[0.1355,0.2619,-0.4637],[-0.1185,0.0604,0.4042],[0.115,0.2262,-0.4927],[-0.1909,0.0271,0.3123],[0.0616,0.2594,-0.6283]],[[-0.1171,0.129,0.4428],[0.1111,0.2429,-0.4031],[-0.0986,0.1118,0.4348],[0.0894,0.2052,-0.4251],[-0.1501,0.0599,0.3502],[0.0483,0.221,-0.5706]],[[-0.0931,0.1681,0.444],[0.0871,0.2233,-0.3558],[-0.0741,0.1531,0.4418],[0.065,0.1847,-0.3728],[-0.1127,0.0958,0.3731],[0.033,0.1864,-0.5189]],[[-0.0709,0.189,0.4612],[0.0949,0.2252,-0.3578],[-0.0488,0.1751,0.4627],[0.0739,0.1875,-0.3744],[-0.0761,0.1146,0.4021],[0.0411,0.1869,-0.5212]],[[-0.0648,0.2008,0.4853],[0.0952,0.2181,-0.3389],[-0.04,0.1889,0.4899],[0.0755,0.1804,-0.3535],[-0.0584,0.1215,0.433],[0.0391,0.1715,-0.4981]],[[-0.0642,0.2352,0.4767],[0.0775,0.1922,-0.2902],[-0.038,0.2271,0.4875],[0.0571,0.1532,-0.3008],[-0.0608,0.1569,0.4434],[0.0117,0.1357,-0.4412]],[[-0.0457,0.2984,0.3919],[0.0383,0.14,-0.1955],[-0.0169,0.2961,0.4051],[0.0149,0.0984,-0.2],[-0.0274,0.2245,0.3929],[-0.0448,0.0713,-0.3267]],[[-0.0301,0.3332,0.3385],[0.0313,0.1242,-0.1642],[-0.0002,0.332,0.3522],[0.0068,0.082,-0.1671],[-0.0093,0.2565,0.3487],[-0.0616,0.0457,-0.2884]],[[-0.0107,0.3506,0.2889],[0.0437,0.1237,-0.1627],[0.0196,0.3482,0.3019],[0.0175,0.0816,-0.1655],[0.007,0.2707,0.3003],[-0.0536,0.0405,-0.2842]],[[-0.0007,0.3468,0.2494],[0.0608,0.1173,-0.1518],[0.0299,0.3433,0.2615],[0.0338,0.0752,-0.1535],[0.0183,0.26,0.2577],[-0.0475,0.0334,-0.2731]],[[-0.01,0.3171,0.2123],[0.0693,0.1086,-0.1328],[0.0192,0.3096,0.2217],[0.0422,0.067,-0.1325],[0.001,0.2301,0.2128],[-0.0448,0.0284,-0.2474]],[[-0.0363,0.2873,0.2018],[0.0727,0.1011,-0.1202],[-0.0095,0.2761,0.209],[0.0467,0.0601,-0.1191],[-0.0408,0.199,0.1982],[-0.0417,0.0235,-0.2281]],[[-0.0914,0.26,0.2224],[0.0849,0.1043,-0.1247],[-0.0692,0.2455,0.2291],[0.0619,0.0636,-0.1255],[-0.1173,0.1693,0.2227],[-0.031,0.0301,-0.2339]],[[-0.1323,0.2277,0.1543],[0.0962,0.112,-0.1315],[-0.1153,0.2083,0.1543],[0.0747,0.0708,-0.1335],[-0.1901,0.1447,0.1313],[-0.0184,0.0398,-0.2377]],[[-0.1441,0.2204,0.0336],[0.0926,0.0998,-0.0949],[-0.1299,0.1993,0.0247],[0.0692,0.0568,-0.0931],[-0.2171,0.151,-0.0208],[-0.0089,0.0221,-0.189]],[[-0.2063,0.1881,0.0289],[0.1162,0.1033,-0.0665],[-0.1951,0.1664,0.0128],[0.0947,0.061,-0.0616],[-0.2857,0.1307,-0.0414],[0.0309,0.0264,-0.1594]],[[-0.3118,0.1468,0.0581],[0.1288,0.1224,-0.0637],[-0.3072,0.1233,0.0357],[0.1103,0.0825,-0.0603],[-0.4052,0.1062,-0.021],[0.0475,0.0571,-0.166]],[[-0.4103,0.1223,0.0378],[0.1395,0.139,-0.0967],[-0.4127,0.099,0.0094],[0.1219,0.1006,-0.0969],[-0.5016,0.1031,-0.0555],[0.0607,0.0848,-0.2181]],[[-0.492,0.1055,0.0354],[0.1105,0.1272,-0.1075],[-0.5018,0.0817,0.0047],[0.0922,0.0894,-0.1132],[-0.5896,0.0999,-0.0627],[0.0282,0.087,-0.2447]],[[-0.5002,0.1025,-0.0098],[0.1141,0.1314,-0.1903],[-0.5109,0.0785,-0.0449],[0.0977,0.0948,-0.2059],[-0.6043,0.1179,-0.1139],[0.0394,0.1155,-0.3438]],[[-0.4455,0.1102,-0.0611],[0.1206,0.1471,-0.2711],[-0.4531,0.0865,-0.0967],[0.1028,0.1112,-0.2914],[-0.5345,0.1256,-0.1641],[0.0525,0.1437,-0.4267]],[[-0.3589,0.1319,-0.1051],[0.0667,0.1312,-0.2642],[-0.3628,0.1092,-0.1384],[0.0418,0.0943,-0.2813],[-0.4142,0.1346,-0.208],[-0.0027,0.1177,-0.4122]],[[-0.3116,0.1384,-0.1206],[0.0147,0.1332,-0.2763],[-0.314,0.1158,-0.1526],[-0.0169,0.0979,-0.2914],[-0.3503,0.1324,-0.225],[-0.0573,0.1129,-0.4219]],[[-0.2927,0.1479,-0.1213],[-0.001,0.1782,-0.3356],[-0.2946,0.1246,-0.1518],[-0.0363,0.1451,-0.3507],[-0.3384,0.1356,-0.222],[-0.0766,0.1505,-0.4766]],[[-0.2521,0.1641,-0.1242],[-0.0206,0.2095,-0.3947],[-0.2516,0.1413,-0.1539],[-0.057,0.1771,-0.4125],[-0.3066,0.1438,-0.22],[-0.0799,0.1794,-0.5319]]]},
+  warp: [[0, 0], [0.17, 11.4], [0.235, 16.4], [0.45, 30]],
+  lane: [[0, 0], [0.17, 0.03], [0.235, 0.16], [0.36, 0.86], [0.42, 0.99], [0.45, 1]],
+  drop: [[0, 0], [0.06, 0.02], [0.18, -0.13], [0.29, -0.1], [0.45, 0]],
+  touches: [{ foot: 'l', surf: 'inside', t0: 0.17, t1: 0.235, ball: [[0.17, 0.03, 0.08], [0.235, 0.22, 0.02]], hit: 1 }],
+  feet: {}, bones: {} };
+CHOP_MC.beat = CHOP_MC.beatT / CHOP_MC.T;
+const mcRollSide = (m, d) => d < 0 ? 'r' : 'l';
 const _mv = new THREE.Vector3(), _mv2 = new THREE.Vector3(), _mo = new THREE.Quaternion();
-function mcGrounded(d, side, t) { return mcRaw(d, side === 'l' ? 0 : 1, t, _mv2).y < 0.075; }
+function mcGrounded(m, d, side, t) { return mcRaw(m, d, side === 'l' ? 0 : 1, t, _mv2).y < 0.075; }
 // foot orientation from the captured heel->toe vector (yaw + pitch), plus the sole-contact tilt
-function mcFootOri(d, side, t, out) {
-  const j = side === 'l' ? 0 : 1; mcRaw(d, 2 + j, t, _mv); mcRaw(d, 4 + j, t, _mv2); _mv2.sub(_mv);
+function mcFootOri(m, d, side, t, out) {
+  const j = side === 'l' ? 0 : 1; mcRaw(m, d, 2 + j, t, _mv); mcRaw(m, d, 4 + j, t, _mv2); _mv2.sub(_mv);
   const h = Math.hypot(_mv2.x, _mv2.z) || 1e-3;
   let yaw = Math.atan2(-_mv2.x, -_mv2.z); yaw = Math.max(-0.6, Math.min(0.6, yaw)) * 0.7;
   let pitch = Math.atan2(_mv2.y, h) - 0.18; pitch = Math.max(-0.5, Math.min(0.7, pitch));
-  if (side === mcRollSide(d)) { const tc = ROLLOVER_MC.touches[0], k = Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)); pitch = pitch * (1 - k) - 0.25 * k; } // heel up / toe down on the ball
+  const tc = m.touches[0];
+  if (side === mcRollSide(m, d)) { const k = Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05));
+    if (tc.surf === 'sole') pitch = pitch * (1 - k) - 0.25 * k; else if (tc.surf === 'inside') { pitch *= 1 - k; yaw = yaw * (1 - k) + d * 0.3 * k; } } // heel up / toe down on the ball
   return out.setFromEuler(_eu.set(pitch, yaw, 0, 'YXZ'));
 }
 // ankle target in G: captured ankle; the rolling foot is raised onto the top of the ball around the contact window
-function mcAnkle(d, side, t, out) {
-  mcRaw(d, side === 'l' ? 0 : 1, t, out); out.y += MC_Y;
-  if (side === mcRollSide(d)) {
-    const tc = ROLLOVER_MC.touches[0], k = ease(Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)));
-    mcFootOri(d, side, t, _mo); const cy = BR - surfOff(side, 'sole', _mv).applyQuaternion(_mo).y;
-    out.y += (Math.max(out.y, cy) - out.y) * k; if (k >= 1) out.y = cy;
+function mcAnkle(m, d, side, t, out) {
+  mcRaw(m, d, side === 'l' ? 0 : 1, t, out); out.y += MC_Y;
+  const tc = m.touches[0];
+  if (side === mcRollSide(m, d)) {
+    const k = ease(Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)));
+    if (tc.mc) { mcFootOri(m, d, side, t, _mo); const cy = BR - surfOff(side, 'sole', _mv).applyQuaternion(_mo).y;
+      out.y += (Math.max(out.y, cy) - out.y) * k; if (k >= 1) out.y = cy; }
+    else if (k > 0) { // authored contact: blend the captured path into the ball-solved ankle at the touch boundaries
+      const tt = Math.min(tc.t1, Math.max(tc.t0, t)), tcs = touchesOf(m, d).find(x => x.side === side); if (tcs) { contactAnkle(m, d, tcs, tt, _mv2); out.lerp(_mv2, k); } }
   }
   out.y = Math.max(out.y, A - 0.01);
   return out;
@@ -721,8 +736,10 @@ function startRoll(d) {
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
 function pickMove() { let i; do { i = (Math.random() * MOVES.length) | 0; } while (i === SK.last && MOVES.length > 1); SK.last = i; return MOVES[i]; }
 function startSkill(d, forced, th) {
-  const m = forced ? MOVES.find(x => x.id === forced) : pickMove();
-  if (forced) SK.last = MOVES.indexOf(m);
+  let m = forced ? MOVES.find(x => x.id === forced) : pickMove();
+  if (m && m.id === 'chop' && mocapOn('Chop')) m = CHOP_MC;
+  if (forced) SK.last = MOVES.findIndex(x => x.id === m.id);
+  SK.lock = {};
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
   beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1;
   if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); } SK.fov = 3.5; shake = Math.max(shake, 0.08);
@@ -769,7 +786,7 @@ function b2g(bd, v) { const c = Math.cos(bd.spin), s = Math.sin(bd.spin), x = v.
 function g2b(bd, v) { const c = Math.cos(-bd.spin), s = Math.sin(-bd.spin), x = v.x - bd.px, z = v.z - bd.pz; v.x = x * c + z * s; v.z = -x * s + z * c; return v; }
 // foot orientation (desired) in G at time t, for the ACTUAL side
 function footOri(m, d, side, t, out) {
-  if (m.mc) return mcFootOri(d, side, t, out);
+  if (m.mc) return mcFootOri(m, d, side, t, out);
   const f = m.feet[d < 0 ? sw(side) : side] || {};
   let sp = 0; for (const tc of m.touches || []) if (tc.surf === 'sole' && tc.foot === (d < 0 ? sw(side) : side)) { const k = Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)); sp = Math.max(sp, 0.3 * k); }
   _eu.set(kf(t, f.pitch) + sp, d * kf(t, f.yaw) + bodyAt(m, d, t).spin, d * kf(t, f.roll), 'YXZ');
@@ -782,7 +799,7 @@ function touchesOf(m, d) {
 }
 // ball centre (G) along a touch's authored path
 function touchBall(m, d, tc, t, out) {
-  if (tc.mc) { mcAnkle(d, tc.side, t, out); mcFootOri(d, tc.side, t, _mo); out.add(surfOff(tc.side, tc.surf, _mv).applyQuaternion(_mo)); out.y = BR; return out; }
+  if (tc.mc) { mcAnkle(m, d, tc.side, t, out); mcFootOri(m, d, tc.side, t, _mo); out.add(surfOff(tc.side, tc.surf, _mv).applyQuaternion(_mo)); out.y = BR; return out; }
   const k = tc.ball; let i = 0; while (i < k.length - 1 && t > k[i + 1][0]) i++;
   const p0 = k[i], p1 = k[Math.min(i + 1, k.length - 1)], u = p1[0] > p0[0] ? Math.min(1, Math.max(0, (t - p0[0]) / (p1[0] - p0[0]))) : 0;
   const y0 = p0.length > 3 ? p0[2] : BR, z0 = p0.length > 3 ? p0[3] : p0[2], y1 = p1.length > 3 ? p1[2] : BR, z1 = p1.length > 3 ? p1[3] : p1[2];
@@ -818,7 +835,7 @@ function hermite(p0, v0, p1, v1, t0, t1, t, out) {
 function footTargetG(m, d, side, t, out) {
   const tc = touchesOf(m, d).find(tc => tc.side === side && t >= tc.t0 && t <= tc.t1);
   if (tc) return { tc, p: contactAnkle(m, d, tc, t, out) };
-  if (m.mc) return { tc: null, p: mcAnkle(d, side, t, out) };
+  if (m.mc) return { tc: null, p: mcAnkle(m, d, side, t, out) };
   const ks = footKeys(m, d, side); let i = 0; while (i < ks.length - 2 && t > ks[i + 1].t) i++;
   if (t <= ks[0].t) out.copy(ks[0].p); else if (t >= ks[ks.length - 1].t) out.copy(ks[ks.length - 1].p);
   else hermite(ks[i].p, ks[i].v, ks[i + 1].p, ks[i + 1].v, ks[i].t, ks[i + 1].t, t, out);
@@ -884,23 +901,33 @@ const _jp = new THREE.Vector3(), _jq = new THREE.Quaternion(), _mp = new THREE.V
 // MOCAP roll-over: Rollover_L / Rollover_R clips (MediaPipe monocular capture -> Blender retarget, see mocap/README) drive
 // pelvis, spine, head and arms; feet stay on the IK + ball-pin solver. ?roll=code (or __rollMocap=false) = code-keyframed fallback.
 window.__rollMocap = !/[?&]roll=code/.test(location.search);
-const mocapOn = () => window.__rollMocap && hero && hero.actions && hero.actions.Rollover_L && hero.actions.Rollover_R;
+const MC_CLIPS = ['Rollover', 'Chop'];
+const mocapOn = (clip = 'Rollover') => window.__rollMocap && hero && hero.actions && hero.actions[clip + '_L'] && hero.actions[clip + '_R'];
 function driveMocap() {
   if (!hero || !hero.actions || !hero.actions.Rollover_L) return;
-  const on = mocapOn() && S.state === 'play' && SK.m && SK.m.id === 'rollover';
+  const m = SK.m, on = S.state === 'play' && m && m.mc && mocapOn(m.clip);
   let w = 0;
-  for (const k of ['Rollover_L', 'Rollover_R']) {
-    const a = hero.actions[k], mine = on && (k === 'Rollover_L') === (SK.d < 0);
-    if (mine) { const T = SK.m.T, t = Math.min(1, SK.t) * T; w = Math.max(0, Math.min(1, t / 0.04, (T - t) / 0.07, SK.fade > 0 ? SK.fade : 1));
-      if (!a.isRunning()) { a.reset(); a.play(); } a.timeScale = 0; a.time = Math.min(1, SK.t) * a.getClip().duration; a.setEffectiveWeight(w); }
+  for (const c of MC_CLIPS) for (const k of [c + '_L', c + '_R']) {
+    const a = hero.actions[k]; if (!a) continue; const mine = on && c === m.clip && (k.endsWith('_L')) === (SK.d < 0);
+    if (mine) { const T = m.T, t = Math.min(1, SK.t) * T; w = Math.max(0, Math.min(1, t / 0.04, (T - t) / 0.07, SK.fade > 0 ? SK.fade : 1));
+      if (!a.isRunning()) { a.reset(); a.play(); } a.timeScale = 0; a.time = mcIdx(m, t) / (m.F.L.length - 1) * a.getClip().duration; a.setEffectiveWeight(w); }
     else if (a.isRunning()) a.stop();
   }
   if (hero.current) hero.current.setEffectiveWeight(1 - w);
 }
 // ball on grass: rolling resistance + aerodynamic drag, decelerating the WORLD velocity (lateral wx, forward = run speed - vz)
 // a = ROLL.a0 + ROLL.cd * v^2  (a0 = 0.8 m/s^2 ~ mu_r 0.08 on short grass; cd = rho*Cd*A/(2m) = 1.2*0.25*0.038/(2*0.43) = 0.0133 /m)
-const ROLL = { a0: 0.8, cd: 0.0133, rf: 0.045, e: 0.35, ahead: 0.25 };
+const ROLL = { a0: 0.8, cd: 0.0133, rf: 0.045, e: 0.35, ahead: 0.25, gatherT: 0.15, leadX: 0.1 };
 const _fp = { l: [new THREE.Vector3(), new THREE.Vector3()], r: [new THREE.Vector3(), new THREE.Vector3()] }, _fpv = { l: null, r: null }, _fpt = { l: null, r: null };
+const _gp = new THREE.Vector3();
+// ball position (G frame of the body at that time) tau seconds ahead, from the rolling model
+function predictBall(tau, out) {
+  const a = ballDecel(Math.hypot(BS.wx || 0, S.speed - (BS.vz || 0))), u = S.speed - (BS.vz || 0), sp = Math.hypot(BS.wx || 0, u) || 1;
+  const k = Math.max(0, 1 - a * tau / sp * 0.5); // mean speed factor over tau
+  let px = P.x; if (SK.m && SK.m.lane && SK.fade === 0) { const T = SK.m.T, t = Math.min(T, Math.min(1, SK.t) * T + tau * (SK.rate || 1)); px = P.fromX + (P.toX - P.fromX) * laneAt(t, SK.m.lane); }
+  out.set(P.x + BS.p.x + (BS.wx || 0) * k * tau - px, BR, BS.p.z + (BS.vz || 0) * tau + 0.5 * a * (BS.wx ? 1 : 1) * tau * tau * (u / sp));
+  return out;
+}
 function ballDecel(v) { return ROLL.a0 + ROLL.cd * v * v; }
 function ballRoll(dt, lat) {
   let wx = BS.wx || 0, u = S.speed - (BS.vz || 0); const sp = Math.hypot(wx, u);
@@ -908,6 +935,18 @@ function ballRoll(dt, lat) {
   BS.wx = wx; BS.vz = S.speed - u;
   BS.p.x += wx * dt - lat; BS.p.z += BS.vz * dt; BS.p.y = BR;
   footCollide(dt, lat / dt);
+  const G = BS.gather;
+  if (G && !G.done && S.t >= G.t) { // the gather touch: foot capsule must actually be at the ball
+    G.done = true; const s = G.side, fo = hero.bones['foot_' + s], to = hero.bones['ball_' + s];
+    const pa = fo.getWorldPosition(_a), pt = to.getWorldPosition(_b); hero.group.worldToLocal(pa); hero.group.worldToLocal(pt); pt.addScaledVector(_c.subVectors(pt, pa), 0.5);
+    const ab = _c.subVectors(pt, pa), u = Math.max(0, Math.min(1, _d.subVectors(BS.p, pa).dot(ab) / ab.lengthSq())), q = _d.copy(pa).addScaledVector(ab, u);
+    const gap = q.distanceTo(BS.p) - BR - ROLL.rf; BS.gstat = BS.gstat || { hit: 0, miss: 0, gaps: [] };
+    if (gap < 0.09) {
+      const a = ballDecel(S.speed), nz = -Math.min(3.5, Math.sqrt(2 * a * ROLL.ahead)), tr = 2 * -nz / a, nx = Math.max(-2, Math.min(2, -BS.p.x / tr));
+      BS.wx = nx + lat / dt; BS.vz = nz; BS.gstat.hit++; BS.gstat.gaps.push(+gap.toFixed(3));
+      if (BS.rel && !BS.rel.lead) BS.rel.lead = { side: s, dt: +(S.t - BS.rel.t).toFixed(3), x: +(BS.p.x * BS.rel.d).toFixed(3), gap: +gap.toFixed(3) };
+    } else { BS.gstat.miss++; BS.gstat.gaps.push(+gap.toFixed(3)); }
+  }
   // safety net only (counted): ball lost behind / far away from the runner
   if (!SK.m && (BS.p.z > 0.1 || Math.abs(BS.p.x) > 0.9 || BS.p.z < -1.6)) { BS.assist = (BS.assist || 0) + dt; // steer back (critically damped), no snap
     const wn = 6; BS.wx += ((0 - BS.p.x) * wn * wn - (BS.wx - (BS.latv || 0)) * 2 * wn) * dt; BS.vz += ((B0[2] - BS.p.z) * wn * wn - BS.vz * 2 * wn) * dt; }
@@ -963,7 +1002,7 @@ function applySkillPose(dt) {
       for (const sk of list) {
         const d = sk.d, t = Math.min(1, sk.t) * sk.m.T, w = moveW(sk);
         let src = n0; if (d < 0) src = n0.endsWith('_l') ? n0.slice(0, -2) + '_r' : n0.endsWith('_r') ? n0.slice(0, -2) + '_l' : n0;
-        if (sk.m.id === 'rollover' && mocapOn()) continue;
+        if (sk.m.mc) continue;
         const ch = sk.m.bones && sk.m.bones[src]; if (!ch) continue;
         const sx = n0.startsWith('upperarm') ? 0.4 : -1; // spine/neck authored + = bend forward / look down (bone frame is the opposite); arms damped
         const ua = n0.startsWith('upperarm'), ub = ua ? 1 : n0 === 'neck_01' ? 0.25 : 0.3; // rig is very responsive: keep torso/neck subtle
@@ -980,9 +1019,9 @@ function applySkillPose(dt) {
       for (const sk of list) {
         const w = moveW(sk); if (w <= 0) continue; const t = Math.min(1, sk.t) * sk.m.T;
         footTargetG(sk.m, sk.d, s, t, _mp);
-        if (sk.m.mc && sk.fade === 0 && s !== mcRollSide(sk.d)) { // plant lock: grounded support foot holds its lane position
+        if (sk.m.mc && sk.fade === 0 && s !== mcRollSide(sk.m, sk.d)) { // plant lock: grounded support foot holds its lane position
           sk.lock = sk.lock || {}; const L = sk.lock[s];
-          if (mcGrounded(sk.d, s, t)) { if (!L) sk.lock[s] = { x: _mp.x, px: P.x, z: _mp.z }; else { const lx = L.x - (P.x - L.px), cx = Math.max(_mp.x - 0.22, Math.min(_mp.x + 0.22, lx)), wxp = P.x + cx; if (L.w !== undefined && sk === SK) BS.slide = (BS.slide || 0) + Math.abs(wxp - L.w); L.w = wxp; _mp.x = cx; _mp.z = L.z; } }
+          if (mcGrounded(sk.m, sk.d, s, t)) { if (!L) sk.lock[s] = { x: _mp.x, px: P.x, z: _mp.z }; else { const lx = L.x - (P.x - L.px), cx = Math.max(_mp.x - 0.22, Math.min(_mp.x + 0.22, lx)), wxp = P.x + cx; if (L.w !== undefined && sk === SK) BS.slide = (BS.slide || 0) + Math.abs(wxp - L.w); L.w = wxp; _mp.x = cx; _mp.z = L.z; } }
           else sk.lock[s] = null;
         }
         hero.group.localToWorld(_mp);
@@ -994,7 +1033,21 @@ function applySkillPose(dt) {
     }
   }
   // re-gather: after a move the nearer foot reaches out (<=0.3 m) so its next forward swing meets the rolling ball
-  if (!list.length && (BS.reach || Math.abs(BS.p.x) > 0.1) && hero.bones.foot_l) {
+  // timed re-gather after a mocap move's release: the foot on the ball's side is steered (IK) to where the rolling ball WILL be
+  // at G.t (physics prediction), and the touch happens there -> the ball arrives where the foot lands
+  if (BS.gather && hero.bones.foot_l && dt > 0) {
+    const G = BS.gather, now = S.t; predictBall(Math.max(0, G.t - now), _gp);
+    if (!G.side) G.side = _gp.x > 0 ? 'r' : 'l';
+    const w = now < G.t ? ease(Math.min(1, (now - G.t0) / Math.max(0.01, G.t - G.t0))) : Math.max(0, 1 - (now - G.t) / 0.12);
+    if (now - G.t > 0.12) BS.gather = null;
+    else if (w > 0) {
+      const sg = G.side === 'r' ? 1 : -1, fo = b['foot_' + G.side];
+      if (Math.abs(_gp.x) < 0.15) _gp.z += BR + 0.09; else _gp.x -= Math.sign(_gp.x) * (BR + 0.075);
+      _gp.y = A; hero.group.localToWorld(_gp); fo.getWorldPosition(_mp); _mp.lerp(_gp, w); fo.getWorldQuaternion(_mq);
+      _hint.r.set(0, 0.25, -1).applyQuaternion(_gq); ikLeg(G.side, _mp, _mq.clone(), _hint.r.clone());
+    }
+  }
+  if (!list.length && !BS.gather && (BS.reach || Math.abs(BS.p.x) > 0.1) && hero.bones.foot_l) {
     BS.reachW = Math.min(1, (BS.reachW || 0) + dt / 0.1);
     let best = null, bd = 9; for (const s of SIDES) { b['foot_' + s].getWorldPosition(_a); hero.group.worldToLocal(_a); const dd = Math.abs(_a.x - BS.p.x); if (dd < bd) { bd = dd; best = s; } }
     BS.reachSide = best; const fo = b['foot_' + best]; fo.getWorldPosition(_mp); hero.group.worldToLocal(_mp);
@@ -1022,8 +1075,13 @@ function applySkillPose(dt) {
       BS.wx = ((BS.vp ? (BS.v.x + BS.vp.x) / 2 : BS.v.x) + (BS.latv || 0)) * half; BS.vz = (BS.vp ? (BS.v.z + BS.vp.z) / 2 : BS.v.z) * half;
       // forward: the capture ran at ~3 m/s, the game at 13-30 m/s, so the sole's backward drag is clamped to keep the ball in front
       BS.vz = Math.max(-1.2, Math.min(0.2, BS.vz));
+      // sideways: the capture's foot swing is far faster than the lane shift needs; the ball leaves at most ROLL.relX faster than the body
+      if (SK.m && SK.m.mc) { // the touch aims the ball into the new lane: it arrives just ahead of where the body finishes
+        const lv = BS.latv || 0, d = Math.sign(P.toX - P.fromX) || 1, tRem = Math.max(0.12, (SK.m.T - Math.min(1, SK.t) * SK.m.T) / (SK.rate || 1) + 0.06);
+        BS.gT = tRem; BS.wx = lv + Math.max(-3, Math.min(3, (P.toX + d * ROLL.leadX - P.x - BS.p.x) / tRem - lv)); }
       if (SK.rel) { BS.rel = { t: S.t, x: +(BS.p.x * SK.rel).toFixed(3), wx: +(BS.wx * SK.rel).toFixed(2), vz: +BS.vz.toFixed(2), latv: +((BS.latv || 0) * SK.rel).toFixed(2), d: SK.rel }; SK.rel = 0; }
       BS.reach = true;
+      if (SK.m && SK.m.mc || BS.rel && S.t - BS.rel.t < 0.01) BS.gather = { t0: S.t, t: S.t + Math.max(ROLL.gatherT, BS.gT || 0), side: null, done: false };
     }
     ballRoll(dt, lat);
   }
