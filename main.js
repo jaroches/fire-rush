@@ -1013,7 +1013,7 @@ function applySkillPose(dt) {
       const fo = b['foot_' + tc.side]; fo.getWorldPosition(_bw); fo.getWorldQuaternion(_q1); _q1.multiply(_q2.copy(FOOT_REL[tc.side]).invert());
       _bw.add(surfOff(tc.side, tc.surf, _c).applyQuaternion(_q1)); hero.group.worldToLocal(_bw); _bw.y = Math.max(BR, _bw.y);
       BS.p.copy(_bw); pinned = tc; phys = false;
-    } else if (t < last) { freeBall(SK, t, BS.p); phys = false; }
+    } else if (t < last || !SK.m.mc) { freeBall(SK, t, BS.p); phys = false; } // skill moves keep their authored roll-out (v9 behaviour)
   }
   if (phys && dt > 0) {
     if (!BS.phys) { // release: take over the ball's actual velocity (sole velocity at release + the body's lane shift), world frame
@@ -1030,9 +1030,17 @@ function applySkillPose(dt) {
   BS.phys = phys; BS.pin = pinned ? pinned.surf : phys ? BS.pin : null;
   if (SK.m && SK.m.mc && pinned) SK.rel = SK.d;
   if (dt > 0) { BS.vp = BS.v.clone(); BS.v.subVectors(BS.p, old).divideScalar(dt); BS.latv = lat / dt; }
-  fb.position.copy(BS.p);
+  // skill moves (not the roll-over): v9 lead into the new lane after the last touch; folded into the ball when physics takes over
+  let lead = 0;
+  if (SK.m && !SK.m.mc && SK.fade === 0 && SK.m.lane && !pinned) {
+    const t = Math.min(1, SK.t) * SK.m.T, hit = (SK.m.touches || []).find(tc => tc.hit);
+    if (hit && t > hit.t1) { const r = Math.min(1, (t - hit.t1) / 0.06); lead = (laneAt(t + 0.12, SK.m.lane) - laneAt(t, SK.m.lane)) * (P.toX - P.fromX) * r * r * (3 - 2 * r); }
+  }
+  if (phys && BS.lead) { BS.p.x += BS.lead; old.x += BS.lead; }
+  const dl = lead - (phys ? 0 : (BS.lead || 0)); BS.lead = lead;
+  fb.position.copy(BS.p); fb.position.x += lead;
   // rolling without slipping: spin axis = up x ground travel (incl. run speed and lane shift), angle = distance / radius
-  const tx = BS.p.x - old.x + lat, tz = BS.p.z - old.z - dz, dist = Math.hypot(tx, tz);
+  const tx = BS.p.x - old.x + lat + dl, tz = BS.p.z - old.z - dz, dist = Math.hypot(tx, tz);
   if (BS.p.y < BR + 0.03 && dist > 1e-5) { _a.set(tz, 0, -tx).normalize(); _q1.setFromAxisAngle(_a, dist / BR); fb.quaternion.premultiply(_q1); }
   else if (BS.p.y >= BR + 0.03) { _q1.setFromAxisAngle(_a.set(1, 0, 0), dt * 12); fb.quaternion.premultiply(_q1); }
   SK.pinned = pinned ? pinned.side + ':' + pinned.surf : null;
@@ -1153,6 +1161,7 @@ function frame() {
     camera.position.copy(camPos);
     if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - .5) * shake * .5; camera.position.y += (Math.random() - .5) * shake * .5; }
     camLook.set(P.x * 0.8, 1.25 + P.y * 0.3, -7); camera.lookAt(camLook);
+    if (window.__camLow) { camera.position.set(P.x + 0.9, 0.75, 2.3); camera.lookAt(P.x - 0.1, 0.25, -0.6); } // test/render hook only (game camera unchanged)
   }
   if (S.state !== 'title') faceL.intensity = 0;
   sunL.position.set(P.x - 6, 14, -6); sunL.target.position.set(P.x, 0, -4);
