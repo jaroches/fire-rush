@@ -1,7 +1,9 @@
-import bpy, numpy as np, sys
+import bpy, numpy as np, sys, os
+E=os.environ.get
 from mathutils import Vector, Matrix, Quaternion
-P=np.load('/workspace/mocap/pose3d.npy')   # (n,33,3)
-F0,F1,N,FPS=12,34,17,50
+P=np.load(E('POSE','/workspace/mocap/pose3d.npy'))   # (n,33,3)
+F0,F1,N,FPS=int(E('F0','12')),int(E('F1','34')),int(E('N','17')),50
+NAME=E('NAME','Rollover'); DEYAW=float(E('DEYAW','0.75'))
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath='/workspace/fire-rush/assets/anims.glb')
 for o in list(bpy.data.objects):
@@ -43,7 +45,7 @@ S=np.einsum('ij,nkj->nki',Ralign,S)
 # de-yaw: remove most of the heading change (runner keeps facing down the lane), keep 25% hip lead + the shoulder counter-twist
 upv=np.array(cup); lv=np.array(cl); fv=np.cross(upv,lv)
 for i in range(len(S)):
-  h=S[i,23]-S[i,24]; yaw=np.arctan2(h@fv,h@lv)*0.75; c,s_=np.cos(-yaw),np.sin(-yaw)
+  h=S[i,23]-S[i,24]; yaw=np.arctan2(h@fv,h@lv)*DEYAW; c,s_=np.cos(-yaw),np.sin(-yaw)
   K=np.array([[0,-upv[2],upv[1]],[upv[2],0,-upv[0]],[-upv[1],upv[0],0]]); R=np.eye(3)+s_*K+(1-c)*K@K
   ctr=(S[i,23]+S[i,24])/2; S[i]=(S[i]-ctr)@R.T+ctr
 def mirror(S):
@@ -88,9 +90,29 @@ def bake(S,name):
   for o in O:
     ad=o.animation_data; act=ad.action; act.name=name+'_'+o.name
     t=ad.nla_tracks.new(); t.name=name; t.strips.new(name,0,act); ad.action=None
-bake(S,'Rollover_L')   # source: moving LEFT, right sole
-bake(mirror(S),'Rollover_R')
+bake(S,NAME+'_L')   # source: moving LEFT, right sole
+bake(mirror(S),NAME+'_R')
 reset()
 sc=bpy.context.scene; sc.render.fps=FPS; sc.frame_start=0; sc.frame_end=N-1
-bpy.ops.export_scene.gltf(filepath='/workspace/mocap/rollover.glb',export_format='GLB',export_animation_mode='NLA_TRACKS',export_force_sampling=True,export_frame_range=False,export_def_bones=False)
+bpy.ops.export_scene.gltf(filepath=E('OUT','/workspace/mocap/rollover.glb'),export_format='GLB',export_animation_mode='NLA_TRACKS',export_force_sampling=True,export_frame_range=False,export_def_bones=False)
 print('DONE')
+# ---- dump foot trajectories in game G frame (x right, y up, -z forward), hip-centred, ground at y=0, scaled to the rig
+import json
+reset()
+cfv=np.array(cl.cross(cup).normalized()); 
+if np.dot(cfv,np.array(cf))<0: cfv=-cfv
+leg_c=(W('thigh_l')-W('calf_l')).length+(W('calf_l')-W('foot_l')).length
+def dump(S):
+  leg_m=np.median([np.linalg.norm(p[23]-p[25])+np.linalg.norm(p[25]-p[27]) for p in S]); k=leg_c/leg_m
+  out={}
+  L=np.array(cl); U=np.array(cup)
+  G=lambda q,c: [round(float(-(q-c)@L*k),4), float((q-c)@U*k), round(float(-(q-c)@cfv*k),4)]
+  fr=[]
+  for p in S:
+    c=(p[23]+p[24])/2; fr.append({n:G(p[i],c) for n,i in [('al',27),('ar',28),('hl',29),('hr',30),('tl',31),('tr',32),('hip',23)]})
+  g=min(min(f[n][1] for n in ('hl','hr','tl','tr')) for f in fr)
+  for f in fr:
+    for n in f: f[n][1]=round(f[n][1]-g,4)
+  return fr
+json.dump({'L':dump(S),'R':dump(mirror(S)),'scale':leg_c},open(E('FEET','/workspace/mocap/feet.json'),'w'))
+print('FEET OK')
