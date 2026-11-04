@@ -623,7 +623,7 @@ const ROLLOVER = { id: 'rollover', name: '', T: 0.32, beatT: 0.12,
   touches: [{ foot: 'r', surf: 'sole', t0: 0.045, t1: 0.19, ball: [[0.045, -0.02, -0.36], [0.19, 0.42, -0.4]], hit: 1 }],
   feet: { r: { p: [[0, 0.12, A, 0], [0.03, 0.05, 0.3, -0.3], [0.2, 0.44, 0.24, -0.36], [0.26, 0.38, A, -0.22], [0.32, 0.16, A, 0]],
                yaw: [[0, 0], [0.045, -0.45], [0.19, -0.4], [0.27, 0]], pitch: [[0, 0], [0.045, 0.32], [0.19, 0.22], [0.27, 0]] },
-          l: { p: [[0, -0.12, A, 0.02], [0.09, -0.12, A, 0.0], [0.16, 0.02, 0.17, 0.06], [0.24, 0.14, A, 0.02], [0.32, -0.1, A, 0]],
+          l: { p: [[0, -0.12, A, 0.02], [0.09, -0.12, A, 0.0], [0.16, 0.06, 0.2, 0.1], [0.24, 0.2, A, 0.06], [0.32, -0.1, A, 0]],
                yaw: [[0, 0], [0.16, 0.25], [0.24, 0.2], [0.32, 0]] } },
   bones: { neck_01: [[[0, 0], [0.08, 0.25], [0.32, 0]], 0, 0],
     upperarm_l: [0, 0, [[0, 0], [0.1, -0.9], [0.3, 0]]], upperarm_r: [0, 0, [[0, 0], [0.1, 0.6], [0.3, 0]]] } };
@@ -965,7 +965,7 @@ function updatePlay(dt, rdt = dt) {
   if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = 1.1 + S.speed / 40;
   hero.group.position.set(P.x, P.y, 0);
   // lean into lane change
-  const lean = SK.m && SK.m.id === 'rollover' && SK.fade === 0 ? -SK.d * 0.16 * Math.sin(Math.PI * Math.min(1, SK.t)) : P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
+  const lean = SK.m && SK.m.id === 'rollover' && SK.fade === 0 ? -SK.d * 0.24 * Math.sin(Math.PI * Math.min(1, SK.t)) : P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
   hero.group.rotation.z += (lean - hero.group.rotation.z) * Math.min(1, dt * 20);
 
   // move world
