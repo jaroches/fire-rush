@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#c8102e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Fire Rush</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/jsm/"}}</script>
 </head><body>
 <canvas id="c"></canvas>
@@ -26,15 +26,23 @@
   <p class="sub">Chicago street-soccer endless runner</p></div>
   <div class="top" style="gap:12px">
   <button id="startBtn">TAP TO PLAY</button>
-  <p class="help">Swipe ← → to switch lanes · ↑ jump · ↓ slide<br>Keyboard: Arrows / WASD · Space jump</p>
+  <p class="help mob">Tap the buttons — ◀ ▶ lanes · JUMP · SLIDE · SKILL<br>or swipe ← → lanes · ↑ jump · ↓ slide</p>
+  <p class="help desk">← → / A D lanes · ↑ W Space jump · ↓ S slide<br>E or Shift: SKILL move — beat a defender!</p>
   <p class="best">Best: <b id="tBest">0</b></p>
   <p id="warn" class="warn hidden"></p></div>
 </div>
+<div id="controls" class="hidden">
+  <div class="cl"><button class="tb" data-a="left" aria-label="Left">◀</button><button class="tb" data-a="right" aria-label="Right">▶</button></div>
+  <div class="cr"><button class="tb skill" data-a="skill" id="skillBtn"><i id="skillCd"></i><span>⚡<br><small>SKILL</small></span></button>
+  <button class="tb slide" data-a="down"><span>▼<br><small>SLIDE</small></span></button>
+  <button class="tb jump" data-a="up"><span>▲<br><small>JUMP</small></span></button></div>
+</div>
+<div id="popup"></div>
 <div id="over" class="overlay hidden">
   <h2>TACKLED!</h2>
   <div class="stats"><div><small>SCORE</small><b id="oScore">0</b></div><div><small>BALLS</small><b id="oBalls">0</b></div><div><small>DISTANCE</small><b id="oDist">0</b></div></div>
   <p class="best" id="oBest">Best: 0</p>
   <button id="againBtn">PLAY AGAIN</button>
 </div>
-<script type="module" src="main.js"></script>
+<script type="module" src="main.js?v=2"></script>
 </body></html>

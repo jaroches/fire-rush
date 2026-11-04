@@ -26,3 +26,19 @@ button:active{transform:translateY(4px);box-shadow:0 2px 0 #7a0a1c}
 .stats{display:flex;gap:14px}
 .stats div{background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.4);border-radius:14px;padding:10px 16px;min-width:88px;display:flex;flex-direction:column}
 .stats small{font-size:11px;opacity:.8}.stats b{font-size:26px}
+
+.help.desk{display:none}body.desk .help.desk{display:block}body.desk .help.mob{display:none}
+#controls{position:fixed;inset:0;z-index:6;pointer-events:none}
+#controls .cl,#controls .cr{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 18px);display:flex;gap:14px;align-items:flex-end}
+#controls .cl{left:calc(env(safe-area-inset-left) + 14px)}
+#controls .cr{right:calc(env(safe-area-inset-right) + 14px);display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;gap:12px}
+.cr .skill{grid-column:1;grid-row:1}.cr .jump{grid-column:2;grid-row:1}.cr .slide{grid-column:2;grid-row:2}
+.tb{pointer-events:auto;position:relative;overflow:hidden;width:78px;height:78px;padding:0;border-radius:50%;animation:none;font-size:30px;line-height:1;background:rgba(11,31,77,.55);border:3px solid rgba(255,255,255,.85);box-shadow:0 4px 12px rgba(0,0,0,.35);touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.tb small{font-size:12px;letter-spacing:1px}.tb span{position:relative;z-index:1}
+.tb.jump{width:84px;height:84px;background:rgba(200,16,46,.7)}
+.tb.skill{background:rgba(255,255,255,.22);color:#ffe26a}
+.tb.down,.tb:active{transform:scale(.9);background:rgba(255,59,78,.85);box-shadow:0 0 18px rgba(255,59,78,.8)}
+.tb.skill.cool{color:rgba(255,255,255,.6)}
+#skillCd{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(11,26,51,.75) var(--p,0%),transparent 0)}
+#popup{position:fixed;left:50%;top:32%;transform:translate(-50%,-50%) scale(.6);font-size:clamp(36px,10vw,64px);font-weight:900;font-style:italic;color:#ffe26a;text-shadow:0 4px 0 #c8102e,0 8px 18px rgba(0,0,0,.6);opacity:0;pointer-events:none;z-index:7;transition:opacity .15s,transform .25s}
+#popup.on{opacity:1;transform:translate(-50%,-50%) scale(1)}

@@ -7,6 +7,7 @@ const LANES = [-2.2, 0, 2.2];
 const LANE_TIME = 0.13;
 const JUMP_H = 1.45, JUMP_T = 0.66;
 const GRAV = 8 * JUMP_H / (JUMP_T * JUMP_T), JUMP_V = 4 * JUMP_H / JUMP_T;
+const SKILL_T = 0.6, SKILL_CD = 3.5, SKILL_BONUS = 150;
 const SLIDE_T = 0.62, BUFFER_T = 0.22, COYOTE_T = 0.1;
 const START_SPEED = 13, MAX_SPEED = 30, ACCEL = 0.22;
 const CHUNK = 40, NCHUNK = 6;
@@ -390,14 +391,14 @@ function release(o) { o.visible = false; world.remove(o); pools[o.userData.type]
 
 // ---------- game state ----------
 const S = { state: 'loading', speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 30, best: +(localStorage.getItem('fireRushBest') || 0) };
-const P = { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, bufferT: 0 };
-let hero;
+const P = { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, bufferT: 0, skillT: 0, skillCD: 0, beaten: 0 };
+let hero, footBall = null;
 
 function resetGame() {
   for (const o of obstacles) release(o); obstacles.length = 0;
   for (const b of balls) release(b); balls.length = 0;
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
-  Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null });
+  Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, skillT: 0, skillCD: 0, beaten: 0 });
   hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0);
 }
 
@@ -409,7 +410,7 @@ function spawnRow(z) {
   const used = [];
   for (let i = 0; i < n; i++) {
     const lane = lanes[i], type = types[(Math.random() * types.length) | 0];
-    const o = get(type); o.position.set(LANES[lane], 0, z - (type === 'train' ? 6 : 0)); o.userData.lane = lane;
+    const o = get(type); o.position.set(LANES[lane], 0, z - (type === 'train' ? 6 : 0)); o.userData.lane = lane; o.userData.beaten = false;
     if (type === 'rival') { const rr = o.userData.runner; rr.model.rotation.y = 0; rr.play(Math.random() < .5 ? 'Idle_Loop' : 'Dance_Loop', 0, 1); rr.mixer.setTime(Math.random()*2); }
     obstacles.push(o); used.push(lane);
   }
@@ -437,6 +438,13 @@ function tryBuffered() {
       P.vy = JUMP_V; P.grounded = false; P.sinceGround = 1; P.slideT = 0; P.buffer = null;
       hero.play('Jump_Start', 0.06, 1.6);
     }
+  } else if (a === 'skill') {
+    P.buffer = null;
+    if (P.skillCD <= 0 && P.slideT <= 0) {
+      P.skillT = SKILL_T; P.skillCD = SKILL_CD;
+      if (P.grounded && hero.actions && hero.actions.Dance_Loop) hero.play('Dance_Loop', 0.05, 2.2);
+      popup('SKILL!');
+    }
   } else if (a === 'down') {
     if (!P.grounded) { P.vy = Math.min(P.vy, -JUMP_V * 1.2); } // fast-fall, then slide when landing (stays buffered)
     else { P.slideT = SLIDE_T; P.buffer = null; hero.play('Roll', 0.06, 1.35); }
@@ -447,7 +455,8 @@ addEventListener('keydown', (e) => {
   if (k === 'arrowleft' || k === 'a') a = 'left'; else if (k === 'arrowright' || k === 'd') a = 'right';
   else if (k === 'arrowup' || k === 'w' || k === ' ') a = 'up'; else if (k === 'arrowdown' || k === 's') a = 'down';
   else if (k === 'enter') a = 'tap';
-  if (a) { e.preventDefault(); if (S.state === 'over' && a === 'tap') startGame(); else act(a); }
+  else if (k === 'e' || k === 'shift') a = 'skill';
+  if (a) { e.preventDefault(); if (e.repeat && a === 'skill') return; if (S.state === 'over' && a === 'tap') startGame(); else if (!(a === 'skill' && S.state !== 'play')) act(a); }
 });
 let tStart = null;
 canvas.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; tStart = { x: t.clientX, y: t.clientY, done: false }; }, { passive: true });
@@ -460,16 +469,29 @@ document.getElementById('startBtn').addEventListener('click', () => startGame())
 document.getElementById('againBtn').addEventListener('click', () => startGame());
 document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
+// on-screen touch buttons
+document.body.classList.toggle('desk', !isMobile);
+const showControls = isMobile || ('ontouchstart' in window) || /[?&]buttons=1/.test(location.search);
+for (const b of document.querySelectorAll('#controls .tb')) {
+  const down = (e) => { e.preventDefault(); e.stopPropagation(); b.classList.add('down'); act(b.dataset.a); };
+  const up = (e) => { e.preventDefault(); e.stopPropagation(); b.classList.remove('down'); };
+  b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+  for (const ev of ['touchstart', 'touchend', 'touchmove']) b.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+let popT = 0;
+function popup(txt) { const p = document.getElementById('popup'); p.textContent = txt; p.classList.add('on'); clearTimeout(popT); popT = setTimeout(() => p.classList.remove('on'), 650); }
+
 // ---------- UI ----------
 const $ = (id) => document.getElementById(id);
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function startGame() {
   if (S.state === 'loading') return;
-  resetGame(); S.state = 'play'; show('title', false); show('over', false); show('hud', true);
+  resetGame(); S.state = 'play'; show('title', false); show('over', false); show('hud', true); show('controls', showControls);
   hero.play('Jog_Fwd_Loop', 0.2, 1.25);
 }
 function gameOver() {
-  S.state = 'over'; hero.play('Death01', 0.08, 1.2);
+  S.state = 'over'; hero.play('Death01', 0.08, 1.2); show('controls', false); hero.model.position.y = 0; if (footBall) footBall.position.set(0, 0.15, -0.45);
   if (S.score > S.best) { S.best = Math.floor(S.score); localStorage.setItem('fireRushBest', S.best); }
   $('oScore').textContent = Math.floor(S.score); $('oBalls').textContent = S.ballsN; $('oDist').textContent = Math.floor(S.dist) + 'm';
   $('oBest').textContent = 'Best: ' + S.best; $('tBest').textContent = S.best;
@@ -499,6 +521,16 @@ function updatePlay(dt) {
   if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
   else P.sinceGround += dt;
   if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) hero.play('Jog_Fwd_Loop', 0.15, 1.1 + S.speed / 40); }
+  // skill move
+  if (P.skillCD > 0) P.skillCD = Math.max(0, P.skillCD - dt);
+  if (P.skillT > 0) {
+    P.skillT -= dt; const k = 1 - Math.max(0, P.skillT) / SKILL_T;
+    hero.model.rotation.y = Math.PI + k * Math.PI * 2; hero.model.position.y = Math.sin(k * Math.PI) * 0.35;
+    if (footBall) footBall.position.set(Math.sin(k * Math.PI * 2) * 0.3, 0.15 + Math.sin(k * Math.PI) * 2.0, -0.45 + Math.sin(k * Math.PI) * 0.3);
+    if (P.skillT <= 0) { hero.model.rotation.y = Math.PI; hero.model.position.y = 0; if (P.grounded && P.slideT <= 0) hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); }
+  } else if (footBall) { footBall.position.set(0, 0.15 + Math.abs(Math.sin(S.t * 9)) * 0.04, -0.45); }
+  if (footBall) footBall.rotation.x -= dz / 0.15;
+  const sb = document.getElementById('skillBtn'); sb.style.setProperty('--p', (P.skillCD / SKILL_CD * 100).toFixed(1) + '%'); sb.classList.toggle('cool', P.skillCD > 0);
   if (P.buffer) { P.bufferT -= dt; if (P.bufferT <= 0) P.buffer = null; else tryBuffered(); }
   if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = 1.1 + S.speed / 40;
   hero.group.position.set(P.x, P.y, 0);
@@ -523,6 +555,8 @@ function updatePlay(dt) {
     const d = u.d / 2; if (o.position.z + d < hb.z0 || o.position.z - d > hb.z1) continue;
     let ob0 = 0, ob1 = 0;
     if (u.type === 'barrier') { ob0 = 0; ob1 = u.h; } else if (u.type === 'bar') { ob0 = u.y0; ob1 = 2.0; } else if (u.type === 'train') { ob0 = 0; ob1 = 3; } else { ob0 = 0; ob1 = 1.75; }
+    if (u.type === 'rival' && u.beaten) continue;
+    if (hb.y1 > ob0 && hb.y0 < ob1 && u.type === 'rival' && P.skillT > 0) { u.beaten = true; P.beaten++; S.score += SKILL_BONUS; popup('NUTMEG! +' + SKILL_BONUS); continue; }
     if (hb.y1 > ob0 && hb.y0 < ob1) { shake = 0.4; gameOver(); return; }
   }
   for (let i = balls.length - 1; i >= 0; i--) {
@@ -564,7 +598,7 @@ function frame() {
 }
 
 // expose for automated tests
-window.__fireRush = { S, P, act, get hero() { return hero; }, THREE, startGame };
+window.__fireRush = { S, P, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
 
 (async () => {
   await loadAssets();
@@ -572,6 +606,7 @@ window.__fireRush = { S, P, act, get hero() { return hero; }, THREE, startGame }
   hero = new Runner(HERO_KIT, true);
   // hero faces the camera on the title screen for the showcase
   scene.add(hero.group);
+  footBall = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), new THREE.MeshStandardMaterial({ map: ballTex, roughness: .4 })); footBall.castShadow = true; footBall.position.set(0, 0.15, -0.45); hero.group.add(footBall);
   hero.play('Idle_Loop', 0);
   $('tBest').textContent = S.best;
   if (loadError) { $('warn').textContent = loadError; show('warn', true); }
