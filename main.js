@@ -614,19 +614,21 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.15, 0.5], [0.5, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.15, 0.5], [0.5, 0]], 0, 0] } },
 ];
 // plain lane change: sole roll-over (d=+1: RIGHT sole rolls the ball right across the body, plant foot shuffles)
-// SOLE ROLL-OVER (plain lane change, d=+1 = to the right): the LEADING foot (side we move toward) comes up onto the top
-// of the ball while we are still in the old lane, the sole rolls it sideways across the body so it leads us into the new
-// lane, the trailing leg does a crossover shuffle step behind, body leans into the move, then we settle back into the jog.
+// SOLE ROLL-OVER (plain lane change), authored for d=+1 = moving RIGHT: a CROSSOVER sole roll. The LEFT sole (foot on the
+// side we move AWAY from) comes onto the top of the ball while we are still in the old lane and rolls it across the body
+// to the right, in front of the planted RIGHT foot; the ball leads us into the new lane, the left foot crosses over after
+// it and the right foot skips out. Mirrored for d=-1 (moving LEFT: RIGHT sole rolls it left, left foot planted).
 const ROLLOVER = { id: 'rollover', name: '', T: 0.32, beatT: 0.12,
   lane: [[0, 0], [0.04, 0.06], [0.2, 0.6], [0.32, 1]],
   drop: [[0, 0], [0.05, -0.08], [0.22, -0.07], [0.32, 0]],
-  touches: [{ foot: 'r', surf: 'sole', t0: 0.045, t1: 0.19, ball: [[0.045, -0.02, -0.36], [0.19, 0.42, -0.4]], hit: 1 }],
-  feet: { r: { p: [[0, 0.12, A, 0], [0.03, 0.05, 0.3, -0.3], [0.2, 0.44, 0.24, -0.36], [0.26, 0.38, A, -0.22], [0.32, 0.16, A, 0]],
-               yaw: [[0, 0], [0.045, -0.45], [0.19, -0.4], [0.27, 0]], pitch: [[0, 0], [0.045, 0.32], [0.19, 0.22], [0.27, 0]] },
-          l: { p: [[0, -0.12, A, 0.02], [0.09, -0.12, A, 0.0], [0.16, 0.06, 0.2, 0.1], [0.24, 0.2, A, 0.06], [0.32, -0.1, A, 0]],
-               yaw: [[0, 0], [0.16, 0.25], [0.24, 0.2], [0.32, 0]] } },
+  touches: [{ foot: 'l', surf: 'sole', t0: 0.04, t1: 0.18, ball: [[0.04, -0.06, -0.38], [0.18, 0.38, -0.43]], hit: 1 }],
+  feet: { l: { p: [[0, -0.12, A, 0.02], [0.03, -0.08, 0.3, -0.3], [0.2, 0.34, 0.2, -0.38], [0.26, 0.16, A, -0.22], [0.32, -0.1, A, 0]],
+               yaw: [[0, 0], [0.04, 0.45], [0.18, 0.4], [0.26, 0]], pitch: [[0, 0], [0.04, 0.32], [0.18, 0.22], [0.26, 0]] },
+          // plant foot: held on the ground in world space for the first 60 ms (body already moving right), then skips out
+          r: { p: [[0, 0.12, A, 0], [0.06, -0.01, A, 0.02], [0.13, 0.06, 0.15, 0.0], [0.21, 0.3, A, -0.06], [0.32, 0.12, A, 0]],
+               yaw: [[0, 0], [0.13, -0.15], [0.21, -0.1], [0.32, 0]] } },
   bones: { neck_01: [[[0, 0], [0.08, 0.25], [0.32, 0]], 0, 0],
-    upperarm_l: [0, 0, [[0, 0], [0.1, -0.9], [0.3, 0]]], upperarm_r: [0, 0, [[0, 0], [0.1, 0.6], [0.3, 0]]] } };
+    upperarm_l: [0, 0, [[0, 0], [0.1, -0.6], [0.3, 0]]], upperarm_r: [0, 0, [[0, 0], [0.1, 0.9], [0.3, 0]]] } };
 // retime every move to the duration measured frame-accurately in the FC 26 Arena POV reference (spec.md)
 const TREF = { rollover: 0.32, scissor: 0.60, roulette: 0.80, chop: 0.45, elastico: 0.50, croqueta: 0.45, rainbow: 1.05, heel: 0.40 };
 function retime(m, k) {
