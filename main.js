@@ -670,7 +670,7 @@ const STEPOVER_MC = { id: 'scissor', mc: true, name: 'STEP-OVER!', sub: 'BODY FE
   lane: [[0, 0], [0.29, -0.06], [0.4, 0.04], [0.47, 0.2], [0.55, 0.82], [0.6, 1]],
   drop: [[0, 0], [0.11, -0.06], [0.29, -0.16], [0.46, -0.1], [0.6, 0]],
   touches: [{ foot: 'r', surf: 'outside', t0: 0.4, t1: 0.47, ball: [[0.4, 0.04, -0.42], [0.47, 0.24, -0.5]], hit: 1 }],
-  own: 'l', feet: { l: { p: [[0, -0.12, A, 0.02], [0.09, 0.06, 0.3, -0.28], [0.155, 0.0, 0.36, -0.68], [0.22, -0.25, 0.27, -0.6], [0.29, -0.37, A, -0.3], [0.48, -0.35, A, -0.3], [0.6, -0.12, A, -0.12]] } }, bones: {} };
+  own: 'l', feet: { l: { p: [[0, -0.12, A, 0.02], [0.09, 0.08, 0.4, -0.2], [0.155, 0.02, 0.44, -0.72], [0.22, -0.26, 0.34, -0.62], [0.29, -0.37, A, -0.3], [0.48, -0.35, A, -0.3], [0.6, -0.12, A, -0.12]] } }, bones: {} };
 STEPOVER_MC.beat = STEPOVER_MC.beatT / STEPOVER_MC.T;
 const mcRollSide = (m, d) => { const f = (m.touches[0] && m.touches[0].foot) || 'l'; return d < 0 ? sw(f) : f; };
 const mcOwnSide = (m, d) => m.own ? (d < 0 ? sw(m.own) : m.own) : null;
@@ -691,7 +691,10 @@ function mcFootOri(m, d, side, t, out) {
 function mcAnkle(m, d, side, t, out) {
   if (side === mcOwnSide(m, d)) { const ks = footKeys(m, d, side); let i = 0; while (i < ks.length - 2 && t > ks[i + 1].t) i++;
     if (t <= ks[0].t) out.copy(ks[0].p); else if (t >= ks[ks.length - 1].t) out.copy(ks[ks.length - 1].p); else hermite(ks[i].p, ks[i].v, ks[i + 1].p, ks[i + 1].v, ks[i].t, ks[i + 1].t, t, out);
-    out.y = Math.max(out.y, A - 0.01); return b2g(bodyAt(m, d, t), out); }
+    out.y = Math.max(out.y, A - 0.01); b2g(bodyAt(m, d, t), out);
+    // circle round the ball where it actually is (it may have rolled ahead / aside in the dribble), back to the authored plant
+    const k = m === SK.m ? Math.min(1, Math.max(0, Math.min(t / 0.04, (0.3 - t) / 0.07))) : 0; if (k > 0) { out.z += Math.max(-0.45, Math.min(0.4, BS.p.z - B0[2])) * k; out.x += Math.max(-0.25, Math.min(0.25, BS.p.x)) * k; }
+    return out; }
   mcRaw(m, d, side === 'l' ? 0 : 1, t, out); out.y += MC_Y;
   const tc = m.touches[0];
   if (side === mcRollSide(m, d)) {
@@ -755,7 +758,7 @@ function startSkill(d, forced, th) {
   if (m && m.id === 'chop' && mocapOn('Chop')) m = CHOP_MC;
   if (m && m.id === 'scissor' && mocapOn('Stepover')) m = STEPOVER_MC;
   if (forced) SK.last = MOVES.findIndex(x => x.id === m.id);
-  SK.lock = {};
+  SK.lock = {}; SK.bz = Math.max(-0.4, Math.min(0.3, BS.p.z - B0[2])); SK.bx = Math.max(-0.2, Math.min(0.2, BS.p.x));
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
   beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1;
   if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); } SK.fov = 3.5; shake = Math.max(shake, 0.08);
@@ -933,7 +936,7 @@ function driveMocap() {
 }
 // ball on grass: rolling resistance + aerodynamic drag, decelerating the WORLD velocity (lateral wx, forward = run speed - vz)
 // a = ROLL.a0 + ROLL.cd * v^2  (a0 = 0.8 m/s^2 ~ mu_r 0.08 on short grass; cd = rho*Cd*A/(2m) = 1.2*0.25*0.038/(2*0.43) = 0.0133 /m)
-const ROLL = { a0: 0.8, cd: 0.0133, rf: 0.045, e: 0.35, ahead: 0.25, gatherT: 0.15, leadX: 0.1 };
+const ROLL = { a0: 0.8, cd: 0.0133, rf: 0.045, e: 0.35, ahead: 0.25, gatherT: 0.15, leadX: 0.1, gGap: 0.09 };
 const _fp = { l: [new THREE.Vector3(), new THREE.Vector3()], r: [new THREE.Vector3(), new THREE.Vector3()] }, _fpv = { l: null, r: null }, _fpt = { l: null, r: null };
 const _gp = new THREE.Vector3();
 // ball position (G frame of the body at that time) tau seconds ahead, from the rolling model
@@ -971,15 +974,17 @@ function ballStep(dt, lat, now) {
   BS.p.x -= lat; BS.p.z += S.speed * dt; BS.p.y = BR;
   footCollide(dt, lat / dt);
   const G = BS.gather;
-  if (G && !G.done && now >= G.t) { // the gather touch: foot capsule must actually be at the ball
-    G.done = true; const s = G.side, pa = _a, pt = _b; capsuleAt(s, pa, pt);
+  if (G && !G.done && now >= G.t - 0.06) { // the gather touch: the ball has to actually reach the waiting foot (contact within a window)
+    const s = G.side, pa = _a, pt = _b; capsuleAt(s, pa, pt);
     const ab = _c.subVectors(pt, pa), u = Math.max(0, Math.min(1, _d.subVectors(BS.p, pa).dot(ab) / ab.lengthSq())), q = _d.copy(pa).addScaledVector(ab, u);
     const gap = q.distanceTo(BS.p) - BR - ROLL.rf; BS.gstat = BS.gstat || { hit: 0, miss: 0, gaps: [] };
-    if (gap < 0.09) {
+    G.best = Math.min(G.best === undefined ? 9 : G.best, gap);
+    if (gap > ROLL.gGap && now < G.t + 0.08) {} // not there yet
+    else if ((G.done = true) && gap <= ROLL.gGap) {
       const a = ballDecel(S.speed), nz = -Math.min(3.5, Math.sqrt(2 * a * ROLL.ahead)), tr = 2 * -nz / a, nx = Math.max(-2, Math.min(2, -BS.p.x / tr));
-      BS.wx = nx + lat / dt; BS.vz = nz; BS.gstat.hit++; BS.gstat.gaps.push(+gap.toFixed(3));
+      BS.wx = nx + lat / dt; BS.vz = nz; BS.gstat.hit++; G.tHit = now; BS.gstat.gaps.push(+gap.toFixed(3));
       if (BS.rel && !BS.rel.lead) BS.rel.lead = { side: s, dt: +(S.t - BS.rel.t).toFixed(3), x: +(BS.p.x * BS.rel.d).toFixed(3), gap: +gap.toFixed(3) };
-    } else { BS.gstat.miss++; BS.gstat.gaps.push(+gap.toFixed(3)); }
+    } else { BS.gstat.miss++; BS.gstat.gaps.push(+G.best.toFixed(3)); }
   }
   // safety net only (counted): ball lost behind / far away from the runner
   if (!SK.m && (BS.p.z > 0.1 || Math.abs(BS.p.x) > 0.9 || BS.p.z < -1.6)) { BS.assist = (BS.assist || 0) + dt; // steer back (critically damped), no snap
@@ -1073,8 +1078,8 @@ function applySkillPose(dt) {
   if (BS.gather && hero.bones.foot_l && dt > 0) {
     const G = BS.gather, now = S.t; predictBall(Math.max(0, G.t - now), _gp);
     if (!G.side) G.side = _gp.x > 0 ? 'r' : 'l';
-    const w = now < G.t ? ease(Math.min(1, (now - G.t0) / Math.max(0.01, G.t - G.t0))) : Math.max(0, 1 - (now - G.t) / 0.12);
-    if (now - G.t > 0.12) BS.gather = null;
+    const w = now < G.t ? ease(Math.min(1, (now - G.t0) / Math.max(0.01, G.t - G.t0))) : G.done ? Math.max(0, 1 - (now - (G.tHit || G.t)) / 0.12) : 1;
+    if (G.done && now - (G.tHit || G.t) > 0.12) BS.gather = null;
     else if (w > 0) {
       const sg = G.side === 'r' ? 1 : -1, fo = b['foot_' + G.side];
       if (Math.abs(_gp.x) < 0.15) _gp.z += BR + 0.09; else _gp.x -= Math.sign(_gp.x) * (BR + 0.075);
