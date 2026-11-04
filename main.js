@@ -400,7 +400,7 @@ function resetGame() {
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
   Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, beaten: 0 });
   SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SM.g = 1; SM.t = SM.delay = -1;
-  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0;
+  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.hist = null; _fcp.l = _fcp.r = null;
 }
 
 function spawnRow(z) {
@@ -929,16 +929,34 @@ function predictBall(tau, out) {
   return out;
 }
 function ballDecel(v) { return ROLL.a0 + ROLL.cd * v * v; }
+// fixed-rate substeps (240 Hz): the foot capsules are interpolated between the previous and current frame pose, so contacts,
+// impulses, the gather and the safety net see the same sampling at any frame rate / slow-mo stepping
+const SUB = 1 / 240, _fc = { l: [new THREE.Vector3(), new THREE.Vector3()], r: [new THREE.Vector3(), new THREE.Vector3()] }, _fcp = { l: null, r: null };
 function ballRoll(dt, lat) {
-  let wx = BS.wx || 0, u = S.speed - (BS.vz || 0); const sp = Math.hypot(wx, u);
-  if (sp > 1e-4) { const k = Math.max(0, 1 - ballDecel(sp) * dt / sp); wx *= k; u *= k; }
+  const b = hero.bones;
+  for (const s of SIDES) { const fo = b['foot_' + s], to = b['ball_' + s]; if (!fo || !to) continue;
+    const pa = fo.getWorldPosition(_fc[s][0]), pt = to.getWorldPosition(_fc[s][1]); hero.group.worldToLocal(pa); hero.group.worldToLocal(pt); pt.addScaledVector(_a.subVectors(pt, pa), 0.5);
+    // previous-frame capsule expressed in the current body frame (the body moved forward dz and sideways lat in between)
+    if (!_fcp[s]) _fcp[s] = [pa.clone(), pt.clone()]; }
+  const n = Math.max(1, Math.min(64, Math.ceil(dt / SUB - 1e-6))), h = dt / n, t0 = S.t - dt;
+  for (let i = 1; i <= n; i++) { BS.subA = i / n; ballStep(h, lat / n, t0 + i * h); }
+  for (const s of SIDES) if (_fcp[s]) { _fcp[s][0].copy(_fc[s][0]); _fcp[s][1].copy(_fc[s][1]); }
+}
+function capsuleAt(s, out0, out1) { const a = BS.subA; out0.lerpVectors(_fcp[s][0], _fc[s][0], a); out1.lerpVectors(_fcp[s][1], _fc[s][1], a); }
+function ballStep(dt, lat, now) {
+  // exact integration of dv/dt = -(a0 + cd v^2) along the ground velocity (frame-rate independent)
+  let wx = BS.wx || 0, u = S.speed - (BS.vz || 0); const sp = Math.hypot(wx, u); let dist = 0;
+  if (sp > 1e-4) {
+    const a0 = ROLL.a0, cd = ROLL.cd, c = Math.sqrt(a0 * cd), r = Math.sqrt(cd / a0), th0 = Math.atan(sp * r), tStop = th0 / c, te = Math.min(dt, tStop);
+    const th = th0 - c * te, v = th > 0 ? Math.tan(th) / r : 0; dist = Math.log(Math.cos(th) / Math.cos(th0)) / cd;
+    const k = v / sp; BS.p.x += wx / sp * dist; BS.p.z -= u / sp * dist; wx *= k; u *= k;
+  }
   BS.wx = wx; BS.vz = S.speed - u;
-  BS.p.x += wx * dt - lat; BS.p.z += BS.vz * dt; BS.p.y = BR;
+  BS.p.x -= lat; BS.p.z += S.speed * dt; BS.p.y = BR;
   footCollide(dt, lat / dt);
   const G = BS.gather;
-  if (G && !G.done && S.t >= G.t) { // the gather touch: foot capsule must actually be at the ball
-    G.done = true; const s = G.side, fo = hero.bones['foot_' + s], to = hero.bones['ball_' + s];
-    const pa = fo.getWorldPosition(_a), pt = to.getWorldPosition(_b); hero.group.worldToLocal(pa); hero.group.worldToLocal(pt); pt.addScaledVector(_c.subVectors(pt, pa), 0.5);
+  if (G && !G.done && now >= G.t) { // the gather touch: foot capsule must actually be at the ball
+    G.done = true; const s = G.side, pa = _a, pt = _b; capsuleAt(s, pa, pt);
     const ab = _c.subVectors(pt, pa), u = Math.max(0, Math.min(1, _d.subVectors(BS.p, pa).dot(ab) / ab.lengthSq())), q = _d.copy(pa).addScaledVector(ab, u);
     const gap = q.distanceTo(BS.p) - BR - ROLL.rf; BS.gstat = BS.gstat || { hit: 0, miss: 0, gaps: [] };
     if (gap < 0.09) {
@@ -955,9 +973,9 @@ function ballRoll(dt, lat) {
 function footCollide(dt, latv) {
   const b = hero.bones;
   for (const s of SIDES) {
-    const fo = b['foot_' + s], to = b['ball_' + s]; if (!fo || !to) continue;
-    const pa = fo.getWorldPosition(_fp[s][0]), pt = to.getWorldPosition(_fp[s][1]); hero.group.worldToLocal(pa); hero.group.worldToLocal(pt);
-    pt.addScaledVector(_a.subVectors(pt, pa), 0.5);
+    if (!_fcp[s]) continue; const pa = _fp[s][0], pt = _fp[s][1]; capsuleAt(s, pa, pt);
+    // between a mocap move's release and its gather the ball runs between the legs: only the gathering foot may touch it
+    if (BS.gather && !BS.gather.done && (SK.m && SK.m.mc || s !== BS.gather.side)) { _fpv[s] = null; continue; }
     const ab = _b.subVectors(pt, pa), u = Math.max(0, Math.min(1, _c.subVectors(BS.p, pa).dot(ab) / ab.lengthSq())), q = _d.copy(pa).addScaledVector(ab, u);
     const prev = _fpv[s], ptp = _fpt[s]; _fpv[s] = q.clone(); _fpt[s] = pt.clone(); if (!prev || !ptp || dt <= 0) continue;
     const regather = !SK.m && BS.vz > -0.3 && ptp.z > BS.p.z - BR && pt.z <= BS.p.z - BR && Math.abs(pt.x - BS.p.x) < BR + ROLL.rf + 0.12 && pt.y < 0.34;
@@ -969,8 +987,9 @@ function footCollide(dt, latv) {
     const dribble = !SK.m && BS.vz > -0.3 && vf.z < -0.2 && q.z > BS.p.z - 0.05; // forward-swinging foot behind/beside the ball
     if (app <= 0 && !dribble && !regather) continue;
     // a planting/stepping foot only nudges the ball (soft contact, approach capped at 1.2 m/s); kicks are the authored touches
-    const ap = Math.min(0.3, Math.max(0, app)), ee = 0;
-    let nx = vrx + n.x * (1 + ee) * ap, nz = vrz + n.z * (1 + ee) * ap;
+    // soft contact, frame-rate independent: the ball's normal speed becomes the foot's (capped), it does not accumulate per frame
+    const vbn = vrx * n.x + vrz * n.z, vfn = vf.x * n.x + vf.z * n.z, tgt = Math.max(vbn, Math.min(vfn, 0.3)), ap = Math.max(0, tgt - vbn);
+    let nx = vrx + n.x * ap, nz = vrz + n.z * ap;
     if (dribble || regather) { // dribble touch: push it ~ROLL.ahead m ahead (it rolls back to the foot under grass friction), steer to centre
       const a = ballDecel(S.speed); nz = -Math.min(3.5, Math.sqrt(2 * a * ROLL.ahead)); const tr = 2 * -nz / a; nx = Math.max(-2, Math.min(2, -BS.p.x / tr));
       BS.touches = (BS.touches || 0) + 1; if (regather) BS.gap = Math.max(BS.gap || 0, Math.abs(pt.x - BS.p.x) - BR); BS.reach = false;
@@ -1087,7 +1106,12 @@ function applySkillPose(dt) {
   }
   BS.phys = phys; BS.pin = pinned ? pinned.surf : phys ? BS.pin : null;
   if (SK.m && SK.m.mc && pinned) SK.rel = SK.d;
-  if (dt > 0) { BS.vp = BS.v.clone(); BS.v.subVectors(BS.p, old).divideScalar(dt); BS.latv = lat / dt; }
+  if (dt > 0) { // ball velocity over a fixed 1/30 s time window (independent of frame rate / slow-mo stepping)
+    const H = BS.hist || (BS.hist = []); H.push({ t: S.t, x: BS.p.x, z: BS.p.z, px: P.x }); while (H.length > 2 && H[1].t <= S.t - 1 / 30) H.shift();
+    const tw = S.t - 1 / 30; BS.vp = null; let h = H[0];
+    if (H.length > 2 && H[0].t < tw && H[1].t > tw) { const a = H[0], c = H[1], u = (tw - a.t) / (c.t - a.t); h = { t: tw, x: a.x + (c.x - a.x) * u, z: a.z + (c.z - a.z) * u, px: a.px + (c.px - a.px) * u }; }
+    const ht = S.t - h.t;
+    if (ht > 1e-4 && ht < 0.2) { BS.v.set((BS.p.x - h.x) / ht, 0, (BS.p.z - h.z) / ht); BS.latv = (P.x - h.px) / ht; } else { BS.v.subVectors(BS.p, old).divideScalar(dt); BS.latv = lat / dt; } }
   // skill moves (not the roll-over): v9 lead into the new lane after the last touch; folded into the ball when physics takes over
   let lead = 0;
   if (SK.m && !SK.m.mc && SK.fade === 0 && SK.m.lane && !pinned) {
