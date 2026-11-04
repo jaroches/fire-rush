@@ -186,7 +186,8 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb')]);
+    const [hero, anims, hair, roll] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=9').catch(e => { console.warn('mocap roll-over clip missing', e); return null; })]);
+    if (roll) anims.animations.push(...roll.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
     let head = null; root.traverse(o => { if (o.isBone && o.name === 'Head') head = o; });
@@ -833,6 +834,22 @@ function ikLeg(side, target, footQ, hint) {
 const _gq = new THREE.Quaternion(), _tw = { l: new THREE.Vector3(), r: new THREE.Vector3() }, _tq = { l: new THREE.Quaternion(), r: new THREE.Quaternion() }, _hint = { l: new THREE.Vector3(), r: new THREE.Vector3() };
 const _jp = new THREE.Vector3(), _jq = new THREE.Quaternion(), _mp = new THREE.Vector3(), _mq = new THREE.Quaternion(), _bw = new THREE.Vector3(), _np = new THREE.Vector3();
 // called after the mixer update each frame: the current move (+ an interrupted one fading out), feet IK, ball
+// MOCAP roll-over: Rollover_L / Rollover_R clips (MediaPipe monocular capture -> Blender retarget, see mocap/README) drive
+// pelvis, spine, head and arms; feet stay on the IK + ball-pin solver. ?roll=code (or __rollMocap=false) = code-keyframed fallback.
+window.__rollMocap = !/[?&]roll=code/.test(location.search);
+const mocapOn = () => window.__rollMocap && hero && hero.actions && hero.actions.Rollover_L && hero.actions.Rollover_R;
+function driveMocap() {
+  if (!hero || !hero.actions || !hero.actions.Rollover_L) return;
+  const on = mocapOn() && S.state === 'play' && SK.m && SK.m.id === 'rollover';
+  let w = 0;
+  for (const k of ['Rollover_L', 'Rollover_R']) {
+    const a = hero.actions[k], mine = on && (k === 'Rollover_L') === (SK.d < 0);
+    if (mine) { const T = SK.m.T, t = Math.min(1, SK.t) * T; w = Math.max(0, Math.min(1, t / 0.04, (T - t) / 0.07, SK.fade > 0 ? SK.fade : 1));
+      if (!a.isRunning()) { a.reset(); a.play(); } a.timeScale = 0; a.time = Math.min(1, SK.t) * a.getClip().duration; a.setEffectiveWeight(w); }
+    else if (a.isRunning()) a.stop();
+  }
+  if (hero.current) hero.current.setEffectiveWeight(1 - w);
+}
 function applySkillPose(dt) {
   const fb = footBall; if (!hero || !fb || !hero.bones.foot_l) return;
   if (!FOOT_REL.l) calibrateFeet();
@@ -856,6 +873,7 @@ function applySkillPose(dt) {
       for (const sk of list) {
         const d = sk.d, t = Math.min(1, sk.t) * sk.m.T, w = moveW(sk);
         let src = n0; if (d < 0) src = n0.endsWith('_l') ? n0.slice(0, -2) + '_r' : n0.endsWith('_r') ? n0.slice(0, -2) + '_l' : n0;
+        if (sk.m.id === 'rollover' && mocapOn()) continue;
         const ch = sk.m.bones && sk.m.bones[src]; if (!ch) continue;
         const sx = n0.startsWith('upperarm') ? 0.4 : -1; // spine/neck authored + = bend forward / look down (bone frame is the opposite); arms damped
         const ua = n0.startsWith('upperarm'), ub = ua ? 1 : n0 === 'neck_01' ? 0.25 : 0.3; // rig is very responsive: keep torso/neck subtle
@@ -1008,7 +1026,7 @@ function frame() {
   const dt = rdt * SM.g; // global game time scale (slow-mo)
   if (S.state === 'play') updatePlay(dt, rdt);
   if (S.state === 'over') { for (const o of obstacles) if (o.userData.type === 'rival') o.userData.runner.update(dt); }
-  if (hero) { hero.update(dt); if (S.state === 'play') applySkillPose(dt); }
+  if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') applySkillPose(dt); }
   updateFX(dt, S.state === 'play' ? S.speed * dt : 0);
   if (SK.fov > 0.01) SK.fov *= Math.exp(-rdt * 9);
   const fov0 = innerWidth / innerHeight < 0.75 ? 72 : 62; if (Math.abs(camera.fov - fov0 - SK.fov) > 0.01) { camera.fov = fov0 + SK.fov; camera.updateProjectionMatrix(); }
