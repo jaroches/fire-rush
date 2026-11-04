@@ -186,7 +186,7 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair, roll] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=9').catch(e => { console.warn('mocap roll-over clip missing', e); return null; })]);
+    const [hero, anims, hair, roll] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=10').catch(e => { console.warn('mocap roll-over clip missing', e); return null; })]);
     if (roll) anims.animations.push(...roll.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
