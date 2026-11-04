@@ -504,6 +504,17 @@ function gameOver() {
 //  bones:   upper-body pose layers [x,y,z] in the character frame (spine -z = lean right; y = twist, + = turn left;
 //           upperarm_r +z / upperarm_l -z = arm out).
 const SKILL_BONUS = 150, DODGE_WIN = 7.5, COMBO_WIN = 3.2;
+// monotone cubic (Fritsch-Carlson) so lateral travel never stalls at a key, unlike the eased per-segment kf
+function laneAt(t, k) {
+  const n = k.length; if (t <= k[0][0]) return k[0][1]; if (t >= k[n - 1][0]) return k[n - 1][1];
+  const m = []; for (let i = 0; i < n; i++) {
+    const dl = i > 0 ? (k[i][1] - k[i - 1][1]) / (k[i][0] - k[i - 1][0]) : null, dr = i < n - 1 ? (k[i + 1][1] - k[i][1]) / (k[i + 1][0] - k[i][0]) : null;
+    m[i] = dl === null ? dr : dr === null ? dl : (dl * dr <= 0 ? 0 : 2 / (1 / dl + 1 / dr)); }
+  m[0] = 0; m[n - 1] = 0;
+  let i = 1; while (t > k[i][0]) i++;
+  const h = k[i][0] - k[i - 1][0], u = (t - k[i - 1][0]) / h, u2 = u * u, u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * k[i - 1][1] + (u3 - 2 * u2 + u) * h * m[i - 1] + (-2 * u3 + 3 * u2) * k[i][1] + (u3 - u2) * h * m[i];
+}
 function kf(t, keys) {
   if (!keys) return 0; if (typeof keys === 'number') return keys;
   if (t <= keys[0][0]) return keys[0][1];
@@ -520,19 +531,21 @@ const SURF = { sole: [0.0, -(0.117 + BR), -0.08], inside: [-(0.05 + BR * 0.92), 
 const MOVES = [
   // ROULETTE: counter-clockwise from above for a right exit (turns LEFT first, back to the camera -> chest to camera -> exit right).
   { id: 'roulette', name: 'ROULETTE!', sub: 'MARADONA', T: 0.85, beatT: 0.42,
+    lane: [[0, 0], [0.12, 0.03], [0.42, 0.5], [0.72, 0.95], [0.85, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
     spin: [[0, 0], [0.12, 0], [0.3, 1.85], [0.42, 3.14], [0.56, 4.55], [0.72, 5.8], [0.85, 6.283]],
-    drop: [[0, 0], [0.12, -0.07], [0.6, -0.08], [0.85, 0]],
+    drop: [[0, 0], [0.12, -0.06], [0.3, -0.04], [0.6, -0.04], [0.85, 0]],
     touches: [
       { foot: 'r', surf: 'sole', t0: 0.12, t1: 0.3, frame: 'G', ball: [[0.12, 0.1, -0.36], [0.3, 0.02, -0.14]] },
       { foot: 'l', surf: 'sole', t0: 0.36, t1: 0.48, frame: 'G', ball: [[0.36, 0.02, -0.1], [0.48, 0.24, -0.14]] }],
-    feet: { r: { p: [[0, 0.12, A, 0], [0.07, 0.12, 0.2, -0.22], [0.36, 0.1, A, 0.06], [0.6, 0.12, A, 0.05], [0.72, 0.16, 0.18, -0.2], [0.85, 0.12, A, -0.1]], yaw: [[0, 0], [0.12, -0.35], [0.3, -0.2], [0.4, 0]] , pitch: [[0, 0], [0.12, 0.2], [0.3, 0.1], [0.36, 0]] },
-            l: { p: [[0, -0.12, A, 0.02], [0.12, -0.08, A, 0.04], [0.3, -0.07, A, 0.05], [0.34, -0.1, 0.2, -0.12], [0.55, -0.16, 0.16, -0.22], [0.66, -0.15, A, -0.2], [0.85, -0.12, A, -0.05]], yaw: [[0.3, 0], [0.36, 0.3], [0.48, 0.2], [0.6, 0]], pitch: [[0.3, 0], [0.36, 0.2], [0.48, 0.1], [0.55, 0]] } },
-    bones: { spine_02: [[[0, 0], [0.15, 0.14], [0.6, 0.12], [0.85, 0]], [[0, 0], [0.2, 0.25], [0.5, 0.2], [0.85, 0]], 0], neck_01: [[[0, 0], [0.15, 0.3], [0.5, 0.3], [0.7, 0], [0.85, 0]], 0, 0],
+    feet: { r: { p: [[0, 0.12, A, 0], [0.07, 0.12, 0.14, -0.22], [0.36, 0.1, A, 0.06], [0.6, 0.12, A, 0.05], [0.72, 0.16, 0.13, -0.2], [0.85, 0.12, A, -0.1]], yaw: [[0, 0], [0.12, -0.35], [0.3, -0.2], [0.4, 0]] , pitch: [[0, 0], [0.12, 0.2], [0.3, 0.1], [0.36, 0]] },
+            l: { p: [[0, -0.12, A, 0.02], [0.12, -0.08, A, 0.04], [0.3, -0.07, A, 0.05], [0.34, -0.1, 0.14, -0.12], [0.55, -0.16, 0.12, -0.22], [0.66, -0.15, A, -0.2], [0.85, -0.12, A, -0.05]], yaw: [[0.3, 0], [0.36, 0.3], [0.48, 0.2], [0.6, 0]], pitch: [[0.3, 0], [0.36, 0.2], [0.48, 0.1], [0.55, 0]] } },
+    bones: {
       upperarm_r: [0, 0, [[0, 0], [0.15, 1.0], [0.65, 1.0], [0.85, 0]]], upperarm_l: [0, 0, [[0, 0], [0.15, -1.0], [0.65, -1.0], [0.85, 0]]],
       lowerarm_r: [[[0, 0], [0.15, 0.6], [0.65, 0.6], [0.85, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.15, 0.6], [0.65, 0.6], [0.85, 0]], 0, 0] } },
   // RONALDO CHOP: left leg swings over, goes BEHIND the planted right leg, inside of the left foot chops the ball right.
   { id: 'chop', name: 'RONALDO CHOP!', sub: 'CR7', T: 0.5, beatT: 0.22,
-    drop: [[0, 0], [0.06, 0.02], [0.2, -0.1], [0.32, -0.08], [0.5, 0]],
+    lane: [[0, 0], [0.18, 0.04], [0.27, 0.28], [0.45, 0.96], [0.5, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
+    drop: [[0, 0], [0.06, 0.02], [0.2, -0.150], [0.32, -0.120], [0.5, 0]],
     touches: [{ foot: 'l', surf: 'inside', t0: 0.2, t1: 0.27, ball: [[0.2, 0.02, 0.1], [0.27, 0.3, 0.04]], hit: 1 }],
     feet: { r: { p: [[0, 0.12, A, 0], [0.08, 0.13, A, -0.04], [0.32, 0.13, A, -0.04], [0.42, 0.24, 0.17, -0.3], [0.5, 0.26, A, -0.3]], yaw: [[0, 0], [0.15, 0.25], [0.32, 0.2], [0.45, -0.3], [0.5, -0.2]] },
             l: { p: [[0, -0.12, A, 0.02], [0.09, -0.06, 0.27, -0.36], [0.16, 0.0, 0.2, 0.12], [0.36, 0.2, 0.14, -0.02], [0.5, 0.0, A, -0.15]], yaw: [[0, 0], [0.1, 0.1], [0.18, 0.35], [0.3, 0.25], [0.45, 0]], pitch: [[0, 0], [0.09, 0.3], [0.17, 0], [0.5, 0]] } },
@@ -542,7 +555,8 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.2, 0.4], [0.5, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.2, 0.4], [0.5, 0]], 0, 0] } },
   // ELASTICO (right exit = left foot): outside pushes the ball left, foot wraps, inside snaps it back right.
   { id: 'elastico', name: 'ELASTICO!', sub: 'RONALDINHO', T: 0.5, beatT: 0.34,
-    drop: [[0, 0], [0.12, -0.06], [0.36, -0.07], [0.5, 0]],
+    lane: [[0, 0], [0.1, -0.05], [0.26, -0.08], [0.38, 0.35], [0.5, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
+    drop: [[0, 0], [0.12, -0.090], [0.36, -0.105], [0.5, 0]],
     touches: [{ foot: 'l', surf: 'outside', t0: 0.1, t1: 0.22, ball: [[0.1, -0.08, -0.4], [0.22, -0.28, -0.42]] },
               { foot: 'l', surf: 'inside', t0: 0.29, t1: 0.38, ball: [[0.29, -0.31, -0.41], [0.38, 0.06, -0.38]], hit: 1 }],
     feet: { r: { p: [[0, 0.12, A, 0], [0.1, 0.15, A, -0.04], [0.36, 0.15, A, -0.04], [0.43, 0.3, 0.16, -0.25], [0.5, 0.34, A, -0.3]], yaw: [[0, 0], [0.36, 0], [0.45, -0.3], [0.5, -0.2]] },
@@ -553,7 +567,8 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.2, 0.5], [0.5, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.2, 0.5], [0.5, 0]], 0, 0] } },
   // STEP-OVER (right exit): LEFT leg circles over the ball inside->outside (fake left), RIGHT outside pushes it right.
   { id: 'scissor', name: 'STEP-OVER!', sub: 'BODY FEINT', T: 0.55, beatT: 0.42,
-    drop: [[0, 0], [0.1, -0.04], [0.27, -0.11], [0.42, -0.07], [0.55, 0]],
+    lane: [[0, 0], [0.27, -0.06], [0.4, 0.06], [0.5, 0.75], [0.55, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
+    drop: [[0, 0], [0.1, -0.060], [0.27, -0.165], [0.42, -0.105], [0.55, 0]],
     touches: [{ foot: 'r', surf: 'outside', t0: 0.4, t1: 0.47, ball: [[0.4, 0.04, -0.42], [0.47, 0.24, -0.5]], hit: 1 }],
     feet: { l: { p: [[0, -0.12, A, 0.02], [0.08, 0.06, 0.3, -0.26], [0.14, 0.0, 0.36, -0.64], [0.2, -0.24, 0.27, -0.58], [0.27, -0.36, A, -0.3], [0.44, -0.34, A, -0.3], [0.55, -0.12, A, -0.15]], yaw: [[0, 0], [0.08, -0.6], [0.14, 0], [0.22, 0.6], [0.3, 0.4], [0.55, 0]], pitch: [[0, 0], [0.12, 0.2], [0.25, 0], [0.55, 0]] },
             r: { p: [[0, 0.12, A, 0], [0.3, 0.13, A, -0.02], [0.36, 0.12, 0.17, -0.28], [0.55, 0.3, A, -0.42]], yaw: [[0, 0], [0.3, 0], [0.4, 0.2], [0.47, 0.25], [0.55, -0.1]] } },
@@ -563,7 +578,8 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.2, 0.5], [0.55, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.2, 0.5], [0.55, 0]], 0, 0] } },
   // LA CROQUETA (right exit): left inside taps it across, right inside collects and carries it on, body slides right.
   { id: 'croqueta', name: 'LA CROQUETA!', sub: 'INIESTA', T: 0.48, beatT: 0.28,
-    px: [[0, 0], [0.3, 0.1], [0.48, 0.12]], drop: [[0, 0], [0.08, -0.1], [0.36, -0.11], [0.48, 0]],
+    lane: [[0, 0], [0.15, 0.22], [0.37, 0.8], [0.48, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
+    px: [[0, 0], [0.3, 0.1], [0.48, 0.12]], drop: [[0, 0], [0.08, -0.150], [0.36, -0.165], [0.48, 0]],
     touches: [{ foot: 'l', surf: 'inside', t0: 0.07, t1: 0.15, ball: [[0.07, -0.14, -0.36], [0.15, 0.0, -0.37]] },
               { foot: 'r', surf: 'inside', t0: 0.27, t1: 0.37, ball: [[0.27, 0.21, -0.38], [0.37, 0.32, -0.5]], hit: 1 }],
     feet: { l: { p: [[0, -0.13, A, 0], [0.04, -0.12, 0.13, -0.22], [0.25, -0.02, A, -0.14], [0.48, -0.02, A, -0.2]], yaw: [[0, 0], [0.07, 0.25], [0.15, 0.2], [0.25, 0]] },
@@ -574,10 +590,11 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.15, 0.5], [0.48, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.15, 0.5], [0.48, 0]], 0, 0] } },
   // SIMPLE RAINBOW: right sole rolls the ball back onto the left heel, left heel flicks it up over the right shoulder.
   { id: 'rainbow', name: 'RAINBOW FLICK!', sub: 'NEYMAR', T: 1.1, beatT: 0.18,
+    lane: [[0, 0], [0.22, 0.08], [0.7, 0.8], [1.0, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
     drop: [[0, 0], [0.1, -0.08], [0.22, -0.02], [0.4, 0], [1.1, 0]],
     touches: [{ foot: 'r', surf: 'sole', t0: 0.02, t1: 0.12, ball: [[0.02, 0.06, -0.34], [0.12, -0.04, 0.06]] },
               { foot: 'l', surf: 'heel', t0: 0.14, t1: 0.22, ball: [[0.14, -0.06, BR, 0.1], [0.22, -0.02, 0.55, 0.2]], hit: 1 },
-              { foot: null, t0: 1.0, t1: 1.0, air: 0.95, bulge: 0.32, ball: [[1.0, 0.1, BR, -1.1]] }],
+              { foot: null, t0: 1.0, t1: 1.0, air: 1.95, bulge: 0.1, ball: [[1.0, 0.06, BR, -1.6]] }],
     feet: { r: { p: [[0, 0.12, A, 0], [0.0, 0.12, A, 0], [0.2, 0.14, A, -0.12], [0.42, 0.13, 0.2, -0.35], [0.56, 0.12, A, -0.28], [0.78, 0.12, 0.2, 0.05], [0.94, 0.12, A, -0.2], [1.1, 0.12, A, 0]], pitch: [[0, 0], [0.02, 0.25], [0.12, 0.15], [0.2, 0]] },
             l: { p: [[0, -0.12, A, 0.05], [0.1, -0.08, A, -0.06], [0.36, -0.12, 0.38, 0.26], [0.55, -0.12, A, -0.2], [0.74, -0.12, 0.2, 0.08], [0.92, -0.12, A, -0.2], [1.1, -0.12, A, 0]], pitch: [[0.1, 0], [0.14, -0.4], [0.22, -1.0], [0.36, -0.6], [0.55, 0]] } },
     bones: { spine_02: [[[0, 0], [0.18, 0.3], [0.45, 0.05], [1.1, 0]], 0, 0], neck_01: [[[0, 0], [0.15, 0.35], [0.45, -0.45], [0.8, 0.1], [1.1, 0]], 0, 0],
@@ -585,7 +602,8 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.2, 0.6], [1.1, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.2, 0.6], [1.1, 0]], 0, 0] } },
   // LATERAL HEEL TO HEEL (right exit): right foot steps over, its heel taps the ball back, left heel (behind the right leg) pokes it right.
   { id: 'heel', name: 'HEEL TO HEEL!', sub: 'BACKHEEL', T: 0.5, beatT: 0.22,
-    drop: [[0, 0], [0.1, -0.06], [0.3, -0.09], [0.5, 0]],
+    lane: [[0, 0], [0.2, 0.05], [0.27, 0.3], [0.45, 0.96], [0.5, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
+    drop: [[0, 0], [0.1, -0.090], [0.3, -0.135], [0.5, 0]],
     touches: [{ foot: 'r', surf: 'heel', t0: 0.08, t1: 0.14, ball: [[0.08, 0.08, -0.36], [0.14, 0.03, -0.2]] },
               { foot: 'l', surf: 'heel', t0: 0.2, t1: 0.27, ball: [[0.2, -0.01, 0.04], [0.27, 0.26, 0.0]], hit: 1 }],
     feet: { r: { p: [[0, 0.12, A, 0], [0.05, 0.1, 0.22, -0.5], [0.22, 0.14, A, -0.26], [0.38, 0.26, A, -0.32], [0.5, 0.3, A, -0.4]], yaw: [[0, 0], [0.14, 0.05], [0.3, -0.2], [0.5, 0]] },
@@ -596,13 +614,24 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.15, 0.5], [0.5, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.15, 0.5], [0.5, 0]], 0, 0] } },
 ];
 // plain lane change: sole roll-over (d=+1: RIGHT sole rolls the ball right across the body, plant foot shuffles)
-const ROLLOVER = { id: 'rollover', name: '', T: 0.28, beatT: 0.14, drop: [[0, 0], [0.08, -0.04], [0.22, -0.03], [0.28, 0]],
-  touches: [{ foot: 'r', surf: 'sole', t0: 0.06, t1: 0.19, ball: [[0.06, -0.05, -0.4], [0.19, 0.22, -0.42]] }],
+const ROLLOVER = { id: 'rollover', name: '', T: 0.28, beatT: 0.14,
+  lane: [[0, 0], [0.05, 0.12], [0.17, 0.62], [0.28, 1]], // sole drag starts in the old lane, ball rolls across, feet shuffle after it drop: [[0, 0], [0.08, -0.060], [0.22, -0.045], [0.28, 0]],
+  touches: [{ foot: 'r', surf: 'sole', t0: 0.05, t1: 0.17, ball: [[0.05, -0.05, -0.4], [0.17, 0.22, -0.42]], hit: 1 }],
   feet: { r: { p: [[0, 0.12, A, 0], [0.03, 0.06, 0.22, -0.24], [0.28, 0.2, A, -0.2]], yaw: [[0, 0], [0.06, -0.25], [0.19, -0.3], [0.28, 0]], pitch: [[0, 0], [0.06, 0.15], [0.19, 0.1], [0.28, 0]] },
-          l: { p: [[0, -0.12, A, 0.02], [0.18, -0.08, A, 0.0], [0.28, -0.04, A, -0.05]] } },
+          l: { p: [[0, -0.12, A, 0.02], [0.12, -0.1, A, 0.0], [0.2, -0.02, 0.12, -0.1], [0.28, -0.1, A, -0.05]] } }, // plant foot shuffles across after the ball
   bones: { spine_02: [[[0, 0], [0.1, 0.08], [0.28, 0]], 0, [[0, 0], [0.14, -0.08], [0.28, 0]]], neck_01: [[[0, 0], [0.1, 0.2], [0.28, 0]], 0, 0],
     upperarm_l: [0, 0, [[0, 0], [0.14, -0.35], [0.28, 0]]], upperarm_r: [0, 0, [[0, 0], [0.14, 0.25], [0.28, 0]]] } };
-for (const m of [...MOVES, ROLLOVER]) m.beat = m.beatT / m.T;
+// retime every move to the duration measured frame-accurately in the FC 26 Arena POV reference (spec.md)
+const TREF = { rollover: 0.25, scissor: 0.60, roulette: 0.80, chop: 0.45, elastico: 0.50, croqueta: 0.45, rainbow: 1.05, heel: 0.40 };
+function retime(m, k) {
+  const sk = (a) => { if (Array.isArray(a) && a.length && Array.isArray(a[0]) && typeof a[0][0] === 'number') for (const e of a) e[0] *= k; };
+  for (const f of ['spin', 'drop', 'px', 'pz', 'lane']) sk(m[f]);
+  for (const tc of m.touches || []) { tc.t0 *= k; tc.t1 *= k; sk(tc.ball); }
+  for (const s in m.feet || {}) for (const f in m.feet[s]) sk(m.feet[s][f]);
+  for (const b in m.bones || {}) for (const ch of m.bones[b]) sk(ch);
+  m.T *= k; m.beatT *= k;
+}
+for (const m of [...MOVES, ROLLOVER]) { if (TREF[m.id]) retime(m, TREF[m.id] / m.T); m.beat = m.beatT / m.T; }
 const TTI_WIN = 0.7, DODGE_MIN = 1.2, DODGE_MAX = 10; // skill dodge trigger: time-to-impact < 0.7s (clamped 1.2..10m)
 // global slow-mo on the skill's key beat
 const SLOW = { scale: 0.32, easeIn: 0.07, hold: 0.3, fovKick: 7 };
@@ -634,7 +663,7 @@ function startLaneMove(d) {
 }
 function startRoll(d) {
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
-  beginMove(); SK.m = ROLLOVER; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.rolls = (SK.rolls || 0) + 1;
+  beginMove(); SK.m = ROLLOVER; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.rolls = (SK.rolls || 0) + 1;
 }
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
 function pickMove() { let i; do { i = (Math.random() * MOVES.length) | 0; } while (i === SK.last && MOVES.length > 1); SK.last = i; return MOVES[i]; }
@@ -642,7 +671,8 @@ function startSkill(d, forced, th) {
   const m = forced ? MOVES.find(x => x.id === forced) : pickMove();
   if (forced) SK.last = MOVES.indexOf(m);
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
-  beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.fov = 3.5; shake = Math.max(shake, 0.08);
+  beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1;
+  if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); } SK.fov = 3.5; shake = Math.max(shake, 0.08);
   SK.count[m.id] = (SK.count[m.id] || 0) + 1;
   puff();
   // skill dodge: a rival close ahead in the lane we're leaving
@@ -687,7 +717,8 @@ function g2b(bd, v) { const c = Math.cos(-bd.spin), s = Math.sin(-bd.spin), x = 
 // foot orientation (desired) in G at time t, for the ACTUAL side
 function footOri(m, d, side, t, out) {
   const f = m.feet[d < 0 ? sw(side) : side] || {};
-  _eu.set(kf(t, f.pitch), d * kf(t, f.yaw) + bodyAt(m, d, t).spin, d * kf(t, f.roll), 'YXZ');
+  let sp = 0; for (const tc of m.touches || []) if (tc.surf === 'sole' && tc.foot === (d < 0 ? sw(side) : side)) { const k = Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)); sp = Math.max(sp, 0.3 * k); }
+  _eu.set(kf(t, f.pitch) + sp, d * kf(t, f.yaw) + bodyAt(m, d, t).spin, d * kf(t, f.roll), 'YXZ');
   return out.setFromEuler(_eu);
 }
 function surfOff(side, surf, out) { const s = SURF[surf]; return out.set(side === 'l' ? -s[0] : s[0], s[1], s[2]); }
@@ -819,9 +850,10 @@ function applySkillPose(dt) {
         let src = n0; if (d < 0) src = n0.endsWith('_l') ? n0.slice(0, -2) + '_r' : n0.endsWith('_r') ? n0.slice(0, -2) + '_l' : n0;
         const ch = sk.m.bones && sk.m.bones[src]; if (!ch) continue;
         const sx = n0.startsWith('upperarm') ? 0.4 : -1; // spine/neck authored + = bend forward / look down (bone frame is the opposite); arms damped
-        const ua = n0.startsWith('upperarm'), ub = ua ? 1 : 0.6; // rig is very responsive: keep torso/neck subtle
+        const ua = n0.startsWith('upperarm'), ub = ua ? 1 : n0 === 'neck_01' ? 0.25 : 0.3; // rig is very responsive: keep torso/neck subtle
         rx += kf(t, ch[0]) * w * (ua ? 1 : sx * ub); ry += d * kf(t, ch[1]) * w * ub; rz += d * kf(t, ch[2]) * w * (ua ? sx : ub);
       }
+      if (n0.startsWith('upperarm')) { rz = Math.max(-0.38, Math.min(0.38, rz)); rx = Math.max(-0.15, Math.min(0.15, rx)); }
       if (rx || ry || rz) rotFrame(b[n0], rx, ry, rz);
     }
     hero.group.updateMatrixWorld(true);
@@ -859,9 +891,15 @@ function applySkillPose(dt) {
     BS.v.addScaledVector(acc, dt); BS.p.addScaledVector(BS.v, dt); if (BS.p.y < BR) BS.p.y = BR;
   }
   if (SK.m && dt > 0) BS.v.subVectors(BS.p, old).divideScalar(dt);
-  fb.position.copy(BS.p);
+  let lead = 0;
+  if (SK.m && SK.fade === 0 && SK.m.lane && !pinned) {
+    const t = Math.min(1, SK.t) * SK.m.T, hit = (SK.m.touches || []).find(tc => tc.hit);
+    if (hit && t > hit.t1) { const r = Math.min(1, (t - hit.t1) / 0.06); lead = (laneAt(t + 0.12, SK.m.lane) - laneAt(t, SK.m.lane)) * (P.toX - P.fromX) * r * r * (3 - 2 * r); }
+  }
+  const dl = lead - (BS.lead || 0); BS.lead = lead;
+  fb.position.copy(BS.p); fb.position.x += lead;
   // rolling: ground contact => spin about (up x travel), travel includes the run speed and the lane shift
-  const tx = BS.p.x - old.x + lat, tz = BS.p.z - old.z - dz, dist = Math.hypot(tx, tz);
+  const tx = BS.p.x - old.x + lat + dl, tz = BS.p.z - old.z - dz, dist = Math.hypot(tx, tz);
   if (BS.p.y < BR + 0.03 && dist > 1e-5) { _a.set(tz, 0, -tx).normalize(); _q1.setFromAxisAngle(_a, dist / BR); fb.quaternion.premultiply(_q1); }
   else if (BS.p.y >= BR + 0.03) { _q1.setFromAxisAngle(_a.set(1, 0, 0), dt * 12); fb.quaternion.premultiply(_q1); }
   SK.pinned = pinned ? pinned.side + ':' + pinned.surf : null;
@@ -904,12 +942,15 @@ function updatePlay(dt, rdt = dt) {
   S.speed = Math.min(MAX_SPEED, S.speed + ACCEL * dt * (S.speed < 20 ? 1.4 : 0.8));
   const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30);
   // lanes
-  if (P.laneT < 1) {
+  if (SK.m && SK.fade === 0 && SK.m.lane && P.laneT < 1) {
+    // skill moves travel across THROUGH the move: lateral position follows the move's own lane curve
+    const lp = laneAt(Math.min(1, SK.t) * SK.m.T, SK.m.lane); P.x = P.fromX + (P.toX - P.fromX) * lp; P.laneT = Math.min(0.999, Math.max(0, lp));
+  } else if (P.laneT < 1) {
     // lateral translation is decoupled from the visual move and runs on real time so controls stay snappy in slow-mo
     P.laneT = Math.min(1, P.laneT + rdt / LANE_TIME);
     P.x = P.fromX + (P.toX - P.fromX) * easeOut(P.laneT);
   }
-  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt / SK.m.T; if (SK.t >= 1) SK.m = null; } }
+  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt * (SK.rate || 1) / SK.m.T; if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; } } }
   // vertical
   if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
   else P.sinceGround += dt;
@@ -927,7 +968,7 @@ function updatePlay(dt, rdt = dt) {
   if (S.nextSpawn <= 0) { spawnRow(-110); S.nextSpawn = Math.max(14, 30 - S.speed * 0.45) + Math.random() * 8; }
 
   // hitbox
-  const sliding = P.slideT > 0, hb = { x: P.x, w: 0.32, y0: P.y + 0.05, y1: P.y + (sliding ? 0.8 : 1.7), z0: -0.25, z1: 0.25 };
+  const sliding = P.slideT > 0, hb = { x: (SK.m && SK.fade === 0 && SK.m.lane) ? P.toX : P.x, w: 0.32, y0: P.y + 0.05, y1: P.y + (sliding ? 0.8 : 1.7), z0: -0.25, z1: 0.25 };
   for (let i = obstacles.length - 1; i >= 0; i--) {
     const o = obstacles[i], u = o.userData;
     o.position.z += dz + (u.type === 'train' ? S.speed * 0.25 * dt : 0);
