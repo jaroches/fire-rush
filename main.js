@@ -614,15 +614,21 @@ const MOVES = [
       lowerarm_r: [[[0, 0], [0.15, 0.5], [0.5, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.15, 0.5], [0.5, 0]], 0, 0] } },
 ];
 // plain lane change: sole roll-over (d=+1: RIGHT sole rolls the ball right across the body, plant foot shuffles)
-const ROLLOVER = { id: 'rollover', name: '', T: 0.28, beatT: 0.14,
-  lane: [[0, 0], [0.05, 0.12], [0.17, 0.62], [0.28, 1]], // sole drag starts in the old lane, ball rolls across, feet shuffle after it drop: [[0, 0], [0.08, -0.060], [0.22, -0.045], [0.28, 0]],
-  touches: [{ foot: 'r', surf: 'sole', t0: 0.05, t1: 0.17, ball: [[0.05, -0.05, -0.4], [0.17, 0.22, -0.42]], hit: 1 }],
-  feet: { r: { p: [[0, 0.12, A, 0], [0.03, 0.06, 0.22, -0.24], [0.28, 0.2, A, -0.2]], yaw: [[0, 0], [0.06, -0.25], [0.19, -0.3], [0.28, 0]], pitch: [[0, 0], [0.06, 0.15], [0.19, 0.1], [0.28, 0]] },
-          l: { p: [[0, -0.12, A, 0.02], [0.12, -0.1, A, 0.0], [0.2, -0.02, 0.12, -0.1], [0.28, -0.1, A, -0.05]] } }, // plant foot shuffles across after the ball
-  bones: { spine_02: [[[0, 0], [0.1, 0.08], [0.28, 0]], 0, [[0, 0], [0.14, -0.08], [0.28, 0]]], neck_01: [[[0, 0], [0.1, 0.2], [0.28, 0]], 0, 0],
-    upperarm_l: [0, 0, [[0, 0], [0.14, -0.35], [0.28, 0]]], upperarm_r: [0, 0, [[0, 0], [0.14, 0.25], [0.28, 0]]] } };
+// SOLE ROLL-OVER (plain lane change, d=+1 = to the right): the LEADING foot (side we move toward) comes up onto the top
+// of the ball while we are still in the old lane, the sole rolls it sideways across the body so it leads us into the new
+// lane, the trailing leg does a crossover shuffle step behind, body leans into the move, then we settle back into the jog.
+const ROLLOVER = { id: 'rollover', name: '', T: 0.32, beatT: 0.12,
+  lane: [[0, 0], [0.04, 0.06], [0.2, 0.6], [0.32, 1]],
+  drop: [[0, 0], [0.05, -0.08], [0.22, -0.07], [0.32, 0]],
+  touches: [{ foot: 'r', surf: 'sole', t0: 0.045, t1: 0.19, ball: [[0.045, -0.02, -0.36], [0.19, 0.42, -0.4]], hit: 1 }],
+  feet: { r: { p: [[0, 0.12, A, 0], [0.03, 0.05, 0.3, -0.3], [0.2, 0.44, 0.24, -0.36], [0.26, 0.38, A, -0.22], [0.32, 0.16, A, 0]],
+               yaw: [[0, 0], [0.045, -0.45], [0.19, -0.4], [0.27, 0]], pitch: [[0, 0], [0.045, 0.32], [0.19, 0.22], [0.27, 0]] },
+          l: { p: [[0, -0.12, A, 0.02], [0.09, -0.12, A, 0.0], [0.16, 0.02, 0.17, 0.06], [0.24, 0.14, A, 0.02], [0.32, -0.1, A, 0]],
+               yaw: [[0, 0], [0.16, 0.25], [0.24, 0.2], [0.32, 0]] } },
+  bones: { neck_01: [[[0, 0], [0.08, 0.25], [0.32, 0]], 0, 0],
+    upperarm_l: [0, 0, [[0, 0], [0.1, -0.9], [0.3, 0]]], upperarm_r: [0, 0, [[0, 0], [0.1, 0.6], [0.3, 0]]] } };
 // retime every move to the duration measured frame-accurately in the FC 26 Arena POV reference (spec.md)
-const TREF = { rollover: 0.25, scissor: 0.60, roulette: 0.80, chop: 0.45, elastico: 0.50, croqueta: 0.45, rainbow: 1.05, heel: 0.40 };
+const TREF = { rollover: 0.32, scissor: 0.60, roulette: 0.80, chop: 0.45, elastico: 0.50, croqueta: 0.45, rainbow: 1.05, heel: 0.40 };
 function retime(m, k) {
   const sk = (a) => { if (Array.isArray(a) && a.length && Array.isArray(a[0]) && typeof a[0][0] === 'number') for (const e of a) e[0] *= k; };
   for (const f of ['spin', 'drop', 'px', 'pz', 'lane']) sk(m[f]);
@@ -791,7 +797,7 @@ function freeBall(sk, t, out) {
   const k = 4.5, tau = t - tp, f = (1 - Math.exp(-k * tau)) / k;
   out.copy(P0).addScaledVector(V0.setY(0), f); out.y = BR; return out;
 }
-function moveW(sk) { const t = Math.min(1, sk.t) * sk.m.T, T = sk.m.T; let w = Math.min(1, t / 0.06, (T - t) / 0.1); if (sk.fade > 0) w = Math.min(w, sk.fade); return Math.max(0, w); }
+function moveW(sk) { const t = Math.min(1, sk.t) * sk.m.T, T = sk.m.T; const ro = sk.m.id === 'rollover'; let w = Math.min(1, t / (ro ? 0.02 : 0.06), (T - t) / (ro ? 0.07 : 0.1)); if (sk.fade > 0) w = Math.min(w, sk.fade); return Math.max(0, w); }
 function wrapPI(a) { return a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI; }
 function beginMove() { SK.bp0 = BS.p.clone(); SK.bv0 = BS.v.clone(); }
 function aimBone(bone, from, to) {
@@ -959,7 +965,7 @@ function updatePlay(dt, rdt = dt) {
   if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = 1.1 + S.speed / 40;
   hero.group.position.set(P.x, P.y, 0);
   // lean into lane change
-  const lean = P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
+  const lean = SK.m && SK.m.id === 'rollover' && SK.fade === 0 ? -SK.d * 0.16 * Math.sin(Math.PI * Math.min(1, SK.t)) : P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
   hero.group.rotation.z += (lean - hero.group.rotation.z) * Math.min(1, dt * 20);
 
   // move world
