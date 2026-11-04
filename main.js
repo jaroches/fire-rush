@@ -726,7 +726,7 @@ function threatAhead(leaveLane) {
   return best;
 }
 function startLaneMove(d) {
-  const th = window.__forceMove ? { o: null, tti: 0.25 } : threatAhead(P.lane - d);
+  const th = threatAhead(P.lane - d) || (window.__forceMove ? { o: null, tti: 0.25 } : null);
   if (th) startSkill(d, window.__forceMove, th); else startRoll(d);
 }
 function startRoll(d) {
