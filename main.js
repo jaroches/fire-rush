@@ -12,6 +12,7 @@ const START_SPEED = 13, MAX_SPEED = 30, ACCEL = 0.22;
 const CHUNK = 40, NCHUNK = 6;
 const COLORS = { red: 0xc8102e, navy: 0x0b1f4d, white: 0xffffff, sky: 0x8fc6ff };
 const isMobile = matchMedia('(pointer:coarse)').matches;
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---------- emblem (original flame, not the club crest) ----------
 function drawEmblem(cv) {
@@ -399,7 +400,9 @@ function resetGame() {
   for (const b of balls) release(b); balls.length = 0;
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
   Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, beaten: 0 });
-  SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SM.g = 1; SM.t = SM.delay = -1;
+  SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SK.flash = null; SK.touchFx = false; SM.g = 1; SM.t = SM.delay = -1;
+  FIRE.n = 0; FIRE.on = false; FIRE.t = 0; syncFireHud();
+  if (typeof snapCam === 'function') snapCam();
   hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.air = false; BS.vy = 0; BS.hist = null; _fcp.l = _fcp.r = null;
 }
 
@@ -474,11 +477,53 @@ for (const b of document.querySelectorAll('#controls .tb')) {
   for (const ev of ['touchstart', 'touchend', 'touchmove']) b.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
   b.addEventListener('contextmenu', (e) => e.preventDefault());
 }
-let popT = 0;
+let popLeft = 0;
 function popup(txt, sub, bonus) {
   const p = document.getElementById('popup'); p.innerHTML = '<b></b>' + (sub ? '<small></small>' : '');
   p.firstChild.textContent = txt; if (sub) p.lastChild.textContent = sub; p.classList.toggle('bonus', !!bonus);
-  p.classList.remove('on'); void p.offsetWidth; p.classList.add('on'); clearTimeout(popT); popT = setTimeout(() => p.classList.remove('on'), bonus ? 900 : 620);
+  p.classList.remove('perfect', 'great', 'late', 'fire');
+  const k = String(txt || '').toLowerCase();
+  if (k === 'perfect' || k === 'great' || k === 'late' || k === 'fire') p.classList.add(k);
+  p.classList.remove('on'); void p.offsetWidth; p.classList.add('on');
+  popLeft = bonus ? 0.85 : 0.55;
+}
+function tickPopup(rdt) {
+  if (popLeft <= 0) return;
+  popLeft -= rdt;
+  if (popLeft <= 0) { const p = document.getElementById('popup'); if (p) p.classList.remove('on'); }
+}
+// Visual read of the dodge. Does not change points, combo, or ball. window.__rate may override the label.
+function visualRate(tti) {
+  if (typeof window.__rate === 'function') return window.__rate(tti);
+  if (tti < 0.20) return 'LATE';
+  if (tti <= 0.38) return 'PERFECT';
+  return 'GREAT';
+}
+const FIRE = { n: 0, on: false, t: 0, need: 3 };
+function noteFire(rate) {
+  if (FIRE.on) return false;
+  FIRE.n = Math.min(FIRE.need, FIRE.n + (rate === 'PERFECT' ? 1 : rate === 'GREAT' ? 0.34 : 0.12));
+  if (FIRE.n >= FIRE.need - 1e-3) { FIRE.on = true; FIRE.t = 6.5; return true; }
+  return false;
+}
+function syncFireHud() {
+  const fw = $('fireFill'), wrap = $('fireWrap');
+  if (fw) fw.style.width = (FIRE.on ? 100 : Math.max(0, Math.min(1, FIRE.n / FIRE.need)) * 100) + '%';
+  if (wrap) wrap.classList.toggle('on', !!FIRE.on);
+}
+function onTouchPresentation() {
+  puff();
+  if (!REDUCE) {
+    CAM.kick = Math.min(2, Math.max(CAM.kick, 1.8));
+    CAM.inset = 0.1;
+    CAM.hold = 0.045;
+    CAM.roll = Math.max(-0.012, Math.min(0.012, (SK.d || 1) * 0.009));
+  }
+  const f = SK.flash;
+  if (!f) return;
+  noteFire(f.rate);
+  popup(f.rate, (f.riv ? 'NUTMEG' : 'DODGE') + ' +' + f.pts + (f.combo > 1 ? '  x' + f.combo : ''), true);
+  SK.lastRate = f.rate; SK.flash = null;
 }
 
 // ---------- UI ----------
@@ -490,7 +535,7 @@ function startGame() {
   hero.play('Jog_Fwd_Loop', 0.2, 1.25);
 }
 function gameOver() {
-  S.state = 'over'; SK.m = null; SK.prev = null; hero.model.rotation.y = Math.PI; hero.play("Death01", 0.08, 1.2); show("controls", false); hero.model.position.set(0, 0, 0); if (footBall) footBall.position.set(...B0);
+  S.state = 'over'; SK.m = null; SK.prev = null; SK.flash = null; FIRE.on = false; FIRE.n = 0; FIRE.t = 0; rim.intensity = 1.6; syncFireHud(); hero.model.rotation.y = Math.PI; hero.play("Death01", 0.08, 1.2); show("controls", false); hero.model.position.set(0, 0, 0); if (footBall) footBall.position.set(...B0);
   if (S.score > S.best) { S.best = Math.floor(S.score); localStorage.setItem('fireRushBest', S.best); }
   $('oScore').textContent = Math.floor(S.score); $('oBalls').textContent = S.ballsN; $('oDist').textContent = Math.floor(S.dist) + 'm';
   $('oBest').textContent = 'Best: ' + S.best; $('tBest').textContent = S.best;
@@ -801,7 +846,7 @@ function updateSlowMo(rdt) {
     SM.t += rdt;
     if (SM.t < SLOW.easeIn) SM.g = 1 + (SLOW.scale - 1) * (SM.t / SLOW.easeIn);
     else if (SM.t < SLOW.easeIn + SLOW.hold) SM.g = SLOW.scale;
-    else { SM.g = 1; SM.t = -1; SK.fov = Math.max(SK.fov, SLOW.fovKick); shake = Math.max(shake, 0.1); }
+    else { SM.g = 1; SM.t = -1; }
   } else SM.g = 1;
 }
 function threatAhead(leaveLane) {
@@ -840,21 +885,22 @@ function startSkill(d, forced, th) {
   SK.lock = {}; SK.bz = Math.max(-0.4, Math.min(0.3, BS.p.z - B0[2])); SK.bx = Math.max(-0.2, Math.min(0.2, BS.p.x));
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
   beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1; SK.ev = 0;
-  if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); SK.ev = Math.max(0.08, th.tti * 0.75); } SK.fov = 3.5; shake = Math.max(shake, 0.08);
+  if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); SK.ev = Math.max(0.08, th.tti * 0.75); }
   SK.count[m.id] = (SK.count[m.id] || 0) + 1;
-  puff();
-  // skill dodge: a rival close ahead in the lane we're leaving
+  SK.touchFx = false;
+  // skill dodge: a rival close ahead in the lane we're leaving. Points stay here; the callout waits for the touch.
   const o = th && th.o;
+  CAM.anchorX = o ? o.position.x : P.fromX;
   if (o) {
     o.userData.beaten = true; const riv = o.userData.type === 'rival';
     SK.combo = S.t - SK.comboT < COMBO_WIN ? SK.combo + 1 : 1; SK.comboT = S.t; P.beaten++;
     const pts = SKILL_BONUS * SK.combo; S.score += pts;
-    popup(m.name, (riv ? 'NUTMEG +' : 'SKILL DODGE +') + pts + (SK.combo > 1 ? '  x' + SK.combo : ''), true);
+    SK.flash = { rate: visualRate(th.tti), pts, combo: SK.combo, riv };
     // slow-mo lands on the key beat, or as we pass the obstacle if that comes first
     triggerSlowMo(Math.max(0, Math.min(m.beat * m.T, th.tti) - SLOW.easeIn));
-  } else popup(m.name, m.sub);
+  } else SK.flash = null;
 }
-function cancelSkill() { if (SK.m && SK.fade === 0) { SK.fade = 1; if (P.laneT < 1) { P.fromX = P.x; P.laneT = 0; } } }
+function cancelSkill() { if (SK.m && SK.fade === 0) { SK.fade = 1; SK.flash = null; if (P.laneT < 1) { P.fromX = P.x; P.laneT = 0; } } }
 const _q = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _fq = new THREE.Quaternion(), _e = new THREE.Euler(), _yq = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0);
 function rotFrame(bone, x, y, z) {
   // apply rotation (in character frame) to bone, keeping hierarchy: local = P^-1 * F*R*F^-1 * P * local
@@ -1276,32 +1322,131 @@ function applySkillPose(dt) {
 }
 // streak trail + dust puff
 const trail = [];
+const blades = [];
 function initFX() {
   for (let i = 0; i < 7; i++) { const g = new THREE.Mesh(new THREE.SphereGeometry(0.15 * (1 - i * 0.1), 10, 8), new THREE.MeshBasicMaterial({ color: i < 2 ? 0xfff2b0 : 0xff6a3d, transparent: true, opacity: 0, depthWrite: false })); g.visible = false; scene.add(g); trail.push({ m: g, p: new THREE.Vector3() }); }
-  const pg = new THREE.RingGeometry(0.1, 0.35, 20); pg.rotateX(-Math.PI / 2);
+  const pg = new THREE.RingGeometry(0.1, 0.32, 18); pg.rotateX(-Math.PI / 2);
   puffM = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: 0xe8d9b5, transparent: true, opacity: 0, depthWrite: false })); scene.add(puffM);
+  const bg = new THREE.PlaneGeometry(0.1, 0.24);
+  const bm = new THREE.MeshBasicMaterial({ color: 0xd5e7a2, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Mesh(bg, bm); m.visible = false; m.frustumCulled = false; scene.add(m);
+    blades.push({ m, life: 1, vx: 0, vy: 0, vz: 0 });
+  }
 }
 let puffM = null, puffT = 1;
-function puff() { if (!puffM || !footBall) return; footBall.getWorldPosition(puffM.position); puffM.position.y = 0.03; puffT = 0; }
+function puff() {
+  if (!puffM || !footBall) return;
+  footBall.getWorldPosition(puffM.position);
+  const d = SK.d || 1;
+  puffM.position.x += -d * 0.07;
+  puffM.position.y = 0.025;
+  puffM.position.z += 0.14;
+  puffT = 0;
+  for (let i = 0; i < blades.length; i++) {
+    const q = blades[i], a = i / blades.length * Math.PI * 2 + 0.4;
+    q.life = 0; q.m.visible = true; q.m.position.copy(puffM.position); q.m.rotation.y = a;
+    q.vx = Math.cos(a) * (0.7 + (i % 3) * 0.15); q.vz = Math.sin(a) * 0.45; q.vy = 1.35 + (i % 4) * 0.16;
+  }
+}
 const _bp = new THREE.Vector3();
 function updateFX(dt, dz) {
   if (!footBall || !trail.length) return;
   footBall.getWorldPosition(_bp);
-  const on = !!SK.m && SK.fade === 0 && SK.skill;
+  const on = FIRE.on || (!!SK.m && SK.fade === 0 && !!SK.skill);
+  if (trail.fire !== FIRE.on) {
+    trail.fire = !!FIRE.on;
+    for (let i = 0; i < trail.length; i++) trail[i].m.material.color.setHex(FIRE.on ? 0xffe26a : (i < 2 ? 0xfff2b0 : 0xff6a3d));
+  }
   for (let i = trail.length - 1; i > 0; i--) { trail[i].p.copy(trail[i - 1].p); trail[i].p.z += dz; }
   trail[0].p.copy(_bp);
-  for (let i = 0; i < trail.length; i++) { const t = trail[i]; t.m.visible = on && i > 0; t.m.position.copy(t.p); t.m.material.opacity = on ? 0.55 * (1 - i / trail.length) : 0; }
-  if (puffT < 1) { puffT += dt / 0.35; puffM.position.z += dz; puffM.scale.setScalar(1 + puffT * 2.5); puffM.material.opacity = 0.7 * (1 - puffT); } else puffM.material.opacity = 0;
+  for (let i = 0; i < trail.length; i++) { const t = trail[i]; t.m.visible = on && i > 0; t.m.position.copy(t.p); t.m.material.opacity = on ? (FIRE.on ? 0.7 : 0.55) * (1 - i / trail.length) : 0; }
+  if (puffT < 1) { puffT += dt / 0.32; puffM.position.z += dz; puffM.scale.setScalar(1 + puffT * 2.2); puffM.material.opacity = 0.65 * (1 - puffT); } else puffM.material.opacity = 0;
+  let alive = false;
+  for (const q of blades) {
+    if (q.life >= 1) { q.m.visible = false; continue; }
+    alive = true; q.life += dt / 0.28; q.vy -= 3.4 * dt;
+    q.m.position.x += q.vx * dt; q.m.position.z += q.vz * dt + dz; q.m.position.y = Math.max(0.02, q.m.position.y + q.vy * dt);
+  }
+  if (blades.length) blades[0].m.material.opacity = alive ? 0.75 * (1 - blades[0].life) : 0;
+}
+
+// ---------- camera ----------
+// Phone portrait keeps a wide-enough lens to read the next lane, and spends that
+// frame on the body instead of the sky. A skill eases closer, between the lane
+// we left and the hero, then back. Root translation only — not the spin bones.
+const CAM = { u: 0, kick: 0, roll: 0, inset: 0, hold: 0, anchorX: 0, sx: 0.16, sy: 1.4, sz: 3.82, lx: 0, ly: 0.46, lz: -1.62 };
+const SKILL_DOLLY = { fov: -8, back: -0.7, height: -0.16, lookY: -0.05, lookZ: -0.28 };
+const _popV = new THREE.Vector3();
+let shake = 0;
+function runnerRig() {
+  return innerWidth / innerHeight < 0.75
+    ? { fov: 71, back: 3.82, height: 1.4, side: 0.16, lookY: 0.46, lookZ: 1.62 }
+    : { fov: 50, back: 4.35, height: 1.64, side: 0.4, lookY: 0.58, lookZ: 2.15 };
+}
+function damp(cur, goal, dt, tau) { return dt > 0 ? cur + (goal - cur) * (1 - Math.exp(-dt / tau)) : cur; }
+function snapCam() {
+  const b = runnerRig();
+  CAM.u = 0; CAM.kick = 0; CAM.roll = 0; CAM.inset = 0; CAM.hold = 0; CAM.anchorX = P.x || 0;
+  CAM.sx = (P.x || 0) + b.side; CAM.sy = b.height; CAM.sz = b.back;
+  CAM.lx = (P.x || 0) * 0.86; CAM.ly = b.lookY; CAM.lz = -b.lookZ;
+}
+function updateGameCamera(rdt) {
+  const b = runnerRig();
+  const want = S.state === 'play' && SK.m && SK.skill && SK.fade === 0 ? 1 : 0;
+  const durIn = REDUCE ? 0.32 : 0.14, durOut = REDUCE ? 0.45 : 0.28;
+  if (rdt > 0) {
+    if (want > CAM.u) CAM.u = Math.min(1, CAM.u + rdt / durIn);
+    else CAM.u = Math.max(0, CAM.u - rdt / durOut);
+    if (CAM.hold > 0) CAM.hold -= rdt; else CAM.inset *= Math.exp(-rdt * 7);
+    CAM.kick *= Math.exp(-rdt * 8);
+    CAM.roll = REDUCE ? 0 : CAM.roll * Math.exp(-rdt * 8);
+  }
+  const s = CAM.u * CAM.u * (3 - 2 * CAM.u);
+  const d = SK.d || 1, anchor = CAM.anchorX || 0, py = P.y || 0;
+  const gap = Math.min(2.2, Math.abs(P.x - anchor));
+  const together = Math.max(0, 1 - gap / 1.8);
+  const k = s * (0.22 + 0.78 * together);
+  const trackX = P.x * (1 - s) + (anchor * 0.5 + P.x * 0.5) * s;
+  const side = b.side * (1 - s) + d * 0.05 * s;
+  const back = b.back + SKILL_DOLLY.back * k - (REDUCE ? 0 : CAM.inset);
+  const height = b.height + SKILL_DOLLY.height * k + py * 0.32;
+  const lookY = b.lookY + SKILL_DOLLY.lookY * k + py * 0.2;
+  const lookZ = b.lookZ + SKILL_DOLLY.lookZ * k;
+  const lookX = P.x * 0.86 * (1 - s) + (anchor * 0.5 + P.x * 0.5) * s;
+  const tau = 0.065;
+  CAM.sx = damp(CAM.sx, trackX + side, rdt, tau);
+  CAM.sy = damp(CAM.sy, height, rdt, 0.08);
+  CAM.sz = damp(CAM.sz, back, rdt, tau);
+  CAM.lx = damp(CAM.lx, lookX, rdt, 0.06);
+  CAM.ly = damp(CAM.ly, lookY, rdt, 0.06);
+  CAM.lz = damp(CAM.lz, -lookZ, rdt, 0.06);
+  camera.position.set(CAM.sx, CAM.sy, CAM.sz);
+  if (shake > 0) { shake -= rdt; if (!REDUCE && shake > 0) camera.position.x += Math.sin(shake * 46) * shake * 0.03; }
+  const legacy = Math.max(-2, Math.min(2, SK.fov || 0));
+  const fov = b.fov + SKILL_DOLLY.fov * k + legacy + (REDUCE ? 0 : CAM.kick);
+  if (Math.abs(camera.fov - fov) > 0.03) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  camera.up.set(Math.sin(CAM.roll), Math.cos(CAM.roll), 0);
+  camera.lookAt(CAM.lx, CAM.ly, CAM.lz);
+  if (window.__camLow) { camera.up.set(0, 1, 0); camera.position.set(P.x + 1.1, 0.95, 3.1); camera.lookAt(P.x - 0.1, 0.62, -0.6); }
+}
+function placePopup() {
+  const p = document.getElementById('popup');
+  if (!p || !p.classList.contains('on') || !hero) return;
+  camera.updateMatrixWorld();
+  _popV.set(P.x + (SK.d || 1) * 0.02, 1.58 + (P.y || 0), 0.05);
+  _popV.project(camera);
+  if (_popV.z > 1) return;
+  p.style.left = Math.max(86, Math.min(innerWidth - 86, (_popV.x * 0.5 + 0.5) * innerWidth)) + 'px';
+  p.style.top = Math.max(54, Math.min(innerHeight * 0.32, (-_popV.y * 0.5 + 0.5) * innerHeight)) + 'px';
 }
 
 // ---------- loop ----------
 const clock = new THREE.Timer(); clock.connect?.(document);
-const camPos = new THREE.Vector3(0, 3.0, 5.0), camLook = new THREE.Vector3(0, 1.2, -6);
-let shake = 0;
 
 function resize() {
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h;
-  camera.fov = w / h < 0.75 ? 72 : 62; camera.updateProjectionMatrix();
+  camera.fov = runnerRig().fov; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
 
@@ -1312,7 +1457,16 @@ function updatePlay(dt, rdt = dt) {
   S.speed = Math.min(MAX_SPEED, S.speed + ACCEL * dt * (S.speed < 20 ? 1.4 : 0.8));
   const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30);
   // move clock first, so the body's lane position and the pose/ball solved this frame use the same move time
-  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt * (SK.rate || 1) / SK.m.T; if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; } } }
+  if (SK.m) {
+    if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; }
+    else {
+      const prev = SK.t;
+      SK.t += dt * (SK.rate || 1) / SK.m.T;
+      const beat = SK.m.beat || (SK.m.T ? (SK.m.beatT || 0) / SK.m.T : 0);
+      if (SK.skill && !SK.touchFx && beat > 0 && prev < beat && SK.t >= beat) { SK.touchFx = true; SK.touchNow = true; }
+      if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; }
+    }
+  }
   // lanes
   if (SK.m && SK.fade === 0 && SK.m.lane && P.laneT < 1) {
     // skill moves travel across THROUGH the move: lateral position follows the move's own lane curve
@@ -1351,7 +1505,7 @@ function updatePlay(dt, rdt = dt) {
     let ob0 = 0, ob1 = 0;
     if (u.type === 'barrier') { ob0 = 0; ob1 = u.h; } else if (u.type === 'bar') { ob0 = u.y0; ob1 = 2.0; } else if (u.type === 'train') { ob0 = 0; ob1 = 3; } else { ob0 = 0; ob1 = 1.75; }
     if (u.type === 'rival' && u.beaten && u.lane !== P.lane) continue;
-    if (hb.y1 > ob0 && hb.y0 < ob1) { shake = 0.4; gameOver(); return; }
+    if (hb.y1 > ob0 && hb.y0 < ob1) { shake = REDUCE ? 0 : 0.16; if (!REDUCE) CAM.kick = Math.min(2, Math.max(CAM.kick, 1.4)); gameOver(); return; }
   }
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i]; b.position.z += dz; b.rotation.y += dt * 4;
@@ -1360,6 +1514,9 @@ function updatePlay(dt, rdt = dt) {
       S.ballsN++; S.score += 25; release(b); balls.splice(i, 1);
     }
   }
+  if (FIRE.on) { FIRE.t -= dt; if (FIRE.t <= 0) { FIRE.on = false; FIRE.n = 0; } }
+  rim.intensity = FIRE.on ? 2.15 : 1.6;
+  syncFireHud();
   $('hScore').textContent = Math.floor(S.score); $('hBalls').textContent = '⚽ ' + S.ballsN; $('hDist').textContent = Math.floor(S.dist) + ' m';
 }
 
@@ -1372,25 +1529,23 @@ function frame() {
   if (S.state === 'play') updatePlay(dt, rdt);
   if (S.state === 'over') { for (const o of obstacles) if (o.userData.type === 'rival') o.userData.runner.update(dt); }
   if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') applySkillPose(dt); }
+  if (SK.touchNow) { SK.touchNow = false; onTouchPresentation(); }
+  tickPopup(rdt);
   updateFX(dt, S.state === 'play' ? S.speed * dt : 0);
   if (SK.fov > 0.01) SK.fov *= Math.exp(-rdt * 9);
-  const fov0 = innerWidth / innerHeight < 0.75 ? 72 : 62; if (Math.abs(camera.fov - fov0 - SK.fov) > 0.01) { camera.fov = fov0 + SK.fov; camera.updateProjectionMatrix(); }
   // L train cruises along the elevated track
   lTrain.position.z += dt * (S.state === 'play' ? S.speed + 12 : 10); if (lTrain.position.z > 60) lTrain.position.z = -260 - Math.random() * 120;
 
   if (S.state === 'title') {
     titleT += dt * 0.35;
     const close = window.__closeup, a = Math.sin(titleT) * 0.9, r = close ? 1.7 : 3.0;
+    camera.up.set(0, 1, 0);
     camera.position.set(Math.sin(a) * r, close ? 1.6 : 1.45, -Math.cos(a) * r);
     camera.lookAt(0, close ? 1.35 : 1.05, 0);
     faceL.position.copy(camera.position).add(new THREE.Vector3(0.5, 0.8, 0)); faceL.intensity = 1.4;
   } else if (hero) {
-    const tx = P.x * 0.6, ty = 2.9 + P.y * 0.45;
-    camPos.x += (tx - camPos.x) * Math.min(1, dt * 7); camPos.y += (ty - camPos.y) * Math.min(1, dt * 5); camPos.z = 4.9;
-    camera.position.copy(camPos);
-    if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - .5) * shake * .5; camera.position.y += (Math.random() - .5) * shake * .5; }
-    camLook.set(P.x * 0.8, 1.25 + P.y * 0.3, -7); camera.lookAt(camLook);
-    if (window.__camLow) { camera.position.set(P.x + 1.1, 0.95, 3.1); camera.lookAt(P.x - 0.1, 0.62, -0.6); } // test/render hook only (game camera unchanged)
+    updateGameCamera(rdt);
+    placePopup();
   }
   if (S.state !== 'title') faceL.intensity = 0;
   sunL.position.set(P.x - 6, 14, -6); sunL.target.position.set(P.x, 0, -4);
@@ -1402,7 +1557,7 @@ function frame() {
 window.__spawnObstacleAhead = (type = 'barrier', z = -6) => { const o = get(type); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return o; };
 window.__spawnRivalAhead = (z = -4) => { const o = get("rival"); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return (window.__lastObs = o); };
 window.__cam = camera;
-window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
+window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame, CAM, FIRE, visualRate };
 
 (async () => {
   await loadAssets();

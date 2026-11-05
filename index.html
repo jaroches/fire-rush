@@ -4,13 +4,16 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#c8102e">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Fire Rush</title>
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css?v=19">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/jsm/"}}</script>
 </head><body>
 <canvas id="c"></canvas>
 <div id="hud" class="hidden">
   <div class="pill" id="hScore">0</div>
+  <div id="fireWrap" aria-label="Fire meter"><div id="fireFill"></div><span id="fireLbl">FIRE</span></div>
   <div class="pill ball" id="hBalls">⚽ 0</div>
   <div class="pill small" id="hDist">0 m</div>
 </div>
@@ -26,8 +29,8 @@
   <p class="sub">Chicago street-soccer endless runner</p></div>
   <div class="top" style="gap:12px">
   <button id="startBtn">TAP TO PLAY</button>
-  <p class="help mob">Every lane change is a skill move — roulette, elastico, chop…<br>◀ ▶ or swipe ← → lanes · ↑ JUMP · ↓ SLIDE<br>Skill past a defender for a NUTMEG bonus!</p>
-  <p class="help desk">← → / A D: lane change = random skill move · ↑ W Space jump · ↓ S slide<br>Skill past a defender right in front of you for a NUTMEG combo!</p>
+  <p class="help mob">Cut as he commits. The touch reads PERFECT, GREAT, or LATE.<br>◀ ▶ or swipe lanes · ↑ JUMP · ↓ SLIDE<br>Three PERFECTs light the FIRE meter.</p>
+  <p class="help desk">← → / A D: take the ball past a defender · ↑ W Space jump · ↓ S slide<br>PERFECT is the clean late touch. Three of them light FIRE.</p>
   <p class="best">Best: <b id="tBest">0</b></p>
   <p id="warn" class="warn hidden"></p></div>
 </div>
@@ -43,5 +46,5 @@
   <p class="best" id="oBest">Best: 0</p>
   <button id="againBtn">PLAY AGAIN</button>
 </div>
-<script type="module" src="main.js?v=18"></script>
+<script type="module" src="main.js?v=19"></script>
 </body></html>
