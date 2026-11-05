@@ -1389,7 +1389,7 @@ function frame() {
     camera.position.copy(camPos);
     if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - .5) * shake * .5; camera.position.y += (Math.random() - .5) * shake * .5; }
     camLook.set(P.x * 0.8, 1.25 + P.y * 0.3, -7); camera.lookAt(camLook);
-    if (window.__camLow) { camera.position.set(P.x + 0.9, 0.75, 2.3); camera.lookAt(P.x - 0.1, 0.25, -0.6); } // test/render hook only (game camera unchanged)
+    if (window.__camLow) { camera.position.set(P.x + 1.1, 0.95, 3.1); camera.lookAt(P.x - 0.1, 0.62, -0.6); } // test/render hook only (game camera unchanged)
   }
   if (S.state !== 'title') faceL.intensity = 0;
   sunL.position.set(P.x - 6, 14, -6); sunL.target.position.set(P.x, 0, -4);
