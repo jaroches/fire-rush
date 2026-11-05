@@ -10,7 +10,7 @@
 </head><body>
 <canvas id="c"></canvas>
 <div id="hud" class="hidden">
-  <div class="pill" id="hScore">0</div>
+  <div class="pill score" id="hScoreWrap"><span id="hScore">0</span><i id="fireFill" class="firefill"></i></div>
   <div class="pill ball" id="hBalls">⚽ 0</div>
   <div class="pill small" id="hDist">0 m</div>
 </div>
@@ -26,8 +26,8 @@
   <p class="sub">Chicago street-soccer endless runner</p></div>
   <div class="top" style="gap:12px">
   <button id="startBtn">TAP TO PLAY</button>
-  <p class="help mob">Every lane change is a skill move — roulette, elastico, chop…<br>◀ ▶ or swipe ← → lanes · ↑ JUMP · ↓ SLIDE<br>Skill past a defender for a NUTMEG bonus!</p>
-  <p class="help desk">← → / A D: lane change = random skill move · ↑ W Space jump · ↓ S slide<br>Skill past a defender right in front of you for a NUTMEG combo!</p>
+  <p class="help mob">Every lane change is a skill move — roulette, elastico, chop…<br>◀ ▶ or swipe ← → lanes · ↑ JUMP · ↓ SLIDE<br>Cut a defender close for PERFECT · 3 Perfects light FIRE</p>
+  <p class="help desk">← → / A D: lane change = random skill move · ↑ W Space jump · ↓ S slide<br>Cut a defender close for PERFECT · 3 Perfects light FIRE</p>
   <p class="best">Best: <b id="tBest">0</b></p>
   <p id="warn" class="warn hidden"></p></div>
 </div>
