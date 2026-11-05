@@ -400,7 +400,7 @@ function resetGame() {
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
   Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, beaten: 0 });
   SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SM.g = 1; SM.t = SM.delay = -1;
-  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.hist = null; _fcp.l = _fcp.r = null;
+  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.air = false; BS.vy = 0; BS.hist = null; _fcp.l = _fcp.r = null;
 }
 
 function spawnRow(z) {
@@ -432,7 +432,7 @@ function tryBuffered() {
   const a = P.buffer; if (!a) return;
   if (a === 'left' || a === 'right') {
     const nl = Math.max(0, Math.min(2, P.lane + (a === 'left' ? -1 : 1)));
-    if (nl !== P.lane) { const d = nl > P.lane ? 1 : -1; P.lane = nl; P.fromX = P.x; P.toX = LANES[nl]; P.laneT = 0; if (P.grounded && P.slideT <= 0) startLaneMove(d); else SK.m = null; }
+    if (nl !== P.lane) { const d = nl > P.lane ? 1 : -1; P.lane = nl; P.fromX = P.x; P.toX = LANES[nl]; P.laneT = 0; if (P.grounded && P.slideT <= 0 && !BS.air) startLaneMove(d); else SK.m = null; }
     P.buffer = null;
   } else if (a === 'up') {
     if (P.grounded || P.sinceGround < COYOTE_T) {
@@ -597,17 +597,19 @@ const MOVES = [
       upperarm_l: [0, 0, [[0, 0], [0.12, -0.9], [0.4, -0.9], [0.48, 0]]], upperarm_r: [0, 0, [[0, 0], [0.12, 0.9], [0.4, 0.9], [0.48, 0]]],
       lowerarm_r: [[[0, 0], [0.15, 0.5], [0.48, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.15, 0.5], [0.48, 0]], 0, 0] } },
   // SIMPLE RAINBOW: right sole rolls the ball back onto the left heel, left heel flicks it up over the right shoulder.
-  { id: 'rainbow', name: 'RAINBOW FLICK!', sub: 'NEYMAR', T: 1.1, beatT: 0.18,
-    lane: [[0, 0], [0.22, 0.08], [0.7, 0.8], [1.0, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
-    drop: [[0, 0], [0.1, -0.08], [0.22, -0.02], [0.4, 0], [1.1, 0]],
-    touches: [{ foot: 'r', surf: 'sole', t0: 0.02, t1: 0.12, ball: [[0.02, 0.06, -0.34], [0.12, -0.04, 0.06]] },
-              { foot: 'l', surf: 'heel', t0: 0.14, t1: 0.22, ball: [[0.14, -0.06, BR, 0.1], [0.22, -0.02, 0.55, 0.2]], hit: 1 },
-              { foot: null, t0: 1.0, t1: 1.0, air: 1.95, bulge: 0.1, ball: [[1.0, 0.06, BR, -1.6]] }],
-    feet: { r: { p: [[0, 0.12, A, 0], [0.0, 0.12, A, 0], [0.2, 0.14, A, -0.12], [0.42, 0.13, 0.2, -0.35], [0.56, 0.12, A, -0.28], [0.78, 0.12, 0.2, 0.05], [0.94, 0.12, A, -0.2], [1.1, 0.12, A, 0]], pitch: [[0, 0], [0.02, 0.25], [0.12, 0.15], [0.2, 0]] },
-            l: { p: [[0, -0.12, A, 0.05], [0.1, -0.08, A, -0.06], [0.36, -0.12, 0.38, 0.26], [0.55, -0.12, A, -0.2], [0.74, -0.12, 0.2, 0.08], [0.92, -0.12, A, -0.2], [1.1, -0.12, A, 0]], pitch: [[0.1, 0], [0.14, -0.4], [0.22, -1.0], [0.36, -0.6], [0.55, 0]] } },
-    bones: { spine_02: [[[0, 0], [0.18, 0.3], [0.45, 0.05], [1.1, 0]], 0, 0], neck_01: [[[0, 0], [0.15, 0.35], [0.45, -0.45], [0.8, 0.1], [1.1, 0]], 0, 0],
-      upperarm_l: [[[0, 0], [0.2, 0.3], [0.6, 0], [1.1, 0]], 0, [[0, 0], [0.2, -0.9], [0.6, -0.5], [1.1, 0]]], upperarm_r: [[[0, 0], [0.2, 0.3], [0.6, 0], [1.1, 0]], 0, [[0, 0], [0.2, 0.9], [0.6, 0.5], [1.1, 0]]],
-      lowerarm_r: [[[0, 0], [0.2, 0.6], [1.1, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.2, 0.6], [1.1, 0]], 0, 0] } },
+  // RAINBOW FLICK (right exit, spec.md 1.05 s): right sole drags the ball back between the feet, right instep rolls it UP the back of the
+  // standing left calf (long, readable), left heel flicks it up and over the head; the flight is physical (solveFlick) into the new lane
+  { id: 'rainbow', name: 'RAINBOW FLICK!', sub: 'NEYMAR', T: 1.05, beatT: 0.6, flick: true,
+    lane: [[0, 0], [0.55, 0.05], [0.75, 0.35], [0.95, 0.85], [1.05, 1]],
+    drop: [[0, 0], [0.25, -0.06], [0.5, -0.1], [0.62, -0.03], [0.78, -0.07], [1.05, 0]],
+    touches: [{ foot: 'r', surf: 'sole', t0: 0.04, t1: 0.24, ball: [[0.04, 0.06, -0.34], [0.24, -0.04, 0.12]] },
+              { foot: 'r', surf: 'inside', t0: 0.27, t1: 0.53, ball: [[0.27, -0.06, BR, 0.17], [0.4, -0.09, 0.22, 0.2], [0.53, -0.1, 0.36, 0.2]] },
+              { foot: 'l', surf: 'heel', t0: 0.55, t1: 0.63, ball: [[0.55, -0.1, 0.38, 0.19], [0.63, -0.07, 0.6, 0.08]], hit: 1 }],
+    feet: { r: { p: [[0, 0.12, A, 0], [0.64, 0.14, A, 0.08], [0.8, 0.12, 0.17, -0.22], [0.93, 0.12, A, -0.18], [1.05, 0.12, A, 0]], pitch: [[0, 0], [0.04, 0.25], [0.24, 0.15], [0.27, 0], [0.53, 0], [0.64, 0]], yaw: [[0.25, 0], [0.3, -0.35], [0.53, -0.35], [0.64, 0]] },
+            l: { p: [[0, -0.12, A, 0.02], [0.5, -0.12, A, 0.03], [0.76, -0.12, 0.3, 0.12], [0.9, -0.12, A, -0.16], [1.05, -0.12, A, 0]], pitch: [[0.5, 0], [0.56, -0.4], [0.63, -1.0], [0.78, -0.6], [0.92, 0]] } },
+    bones: { spine_02: [[[0, 0], [0.3, 0.25], [0.6, 0.3], [0.8, 0.05], [1.05, 0]], 0, 0], neck_01: [[[0, 0], [0.3, 0.35], [0.62, 0.3], [0.8, -0.45], [1.05, 0]], 0, 0],
+      upperarm_l: [[[0, 0], [0.4, 0.3], [0.8, 0], [1.05, 0]], 0, [[0, 0], [0.4, -0.9], [0.8, -0.5], [1.05, 0]]], upperarm_r: [[[0, 0], [0.4, 0.3], [0.8, 0], [1.05, 0]], 0, [[0, 0], [0.4, 0.9], [0.8, 0.5], [1.05, 0]]],
+      lowerarm_r: [[[0, 0], [0.4, 0.6], [1.05, 0]], 0, 0], lowerarm_l: [[[0, 0], [0.4, 0.6], [1.05, 0]], 0, 0] } },
   // LATERAL HEEL TO HEEL (right exit): right foot steps over, its heel taps the ball back, left heel (behind the right leg) pokes it right.
   { id: 'heel', name: 'HEEL TO HEEL!', sub: 'BACKHEEL', T: 0.5, beatT: 0.22,
     lane: [[0, 0], [0.2, 0.05], [0.27, 0.3], [0.45, 0.96], [0.5, 1]], // lateral progress old lane -> new lane (body), driven by the move timeline
@@ -681,8 +683,8 @@ const STEPOVER_MC = { id: 'scissor', mc: true, name: 'STEP-OVER!', sub: 'BODY FE
 STEPOVER_MC.beat = STEPOVER_MC.beatT / STEPOVER_MC.T;
 const mcRollSide = (m, d) => { const f = (m.touches[0] && m.touches[0].foot) || 'l'; return d < 0 ? sw(f) : f; };
 const mcOwnSide = (m, d) => m.own ? (d < 0 ? sw(m.own) : m.own) : null;
-// every ground move (mocap or keyframed fallback) uses the aimed release + physical gather; only the airborne rainbow keeps the v9 path
-const aimedMove = (m) => m.mc || m.id !== 'rainbow';
+// every move (mocap or keyframed fallback) uses the aimed release + physical gather; the rainbow's flight is solved ballistics
+const aimedMove = (m) => true;
 const mcOwns = (m, d, side) => m.own === 'both' || side === mcOwnSide(m, d);
 // ROULETTE (mocap): Zaleto "The Spin Turn" slow-mo (youtube mVRrqneCapU, 9.3-13.8 s), capture frames 65..290 @50 fps -> 41 keys.
 // Capture (yaw removed) drives pelvis drop, trunk lean, wide arms and head; the 360 spin (CCW for d=+1), both sole drags and the
@@ -998,6 +1000,42 @@ function driveMocap() {
 // ball on grass: rolling resistance + aerodynamic drag, decelerating the WORLD velocity (lateral wx, forward = run speed - vz)
 // a = ROLL.a0 + ROLL.cd * v^2  (a0 = 0.8 m/s^2 ~ mu_r 0.08 on short grass; cd = rho*Cd*A/(2m) = 1.2*0.25*0.038/(2*0.43) = 0.0133 /m)
 const ROLL = { a0: 0.8, cd: 0.0133, rf: 0.045, e: 0.35, ahead: 0.25, gatherT: 0.15, leadX: 0.1, gGap: 0.09 };
+// flight (rainbow): gravity, quadratic air drag (same cd), Magnus from the flick's topspin (kM = rho*A*r*Cl/(m*w*r) ~ 0.0025 s), grass bounce
+const AIR = { g: 9.81, kM: 0.0025, e: 0.35, fr: 0.12, settle: 0.7, peak: 2.05, zLand: -1.25, spin: -18 };
+// one airborne / bouncing step of the ball (G frame of the runner, which moves forward at S.speed and sideways by lat)
+function airStep(st, dt, speed) {
+  const uf = speed - st.vz, v = Math.hypot(st.wx, uf, st.vy), c = ROLL.cd * v;
+  const ax = -c * st.wx, af = -c * uf + AIR.kM * st.w * st.vy * -1, ay = -AIR.g - c * st.vy + AIR.kM * st.w * uf;
+  st.wx += ax * dt; const nuf = uf + af * dt; st.vy += ay * dt; st.vz = speed - nuf; st.w *= Math.exp(-0.3 * dt);
+  st.x += st.wx * dt; st.z += (speed - nuf) * dt; st.y += st.vy * dt;
+  if (st.y <= BR && st.vy < 0) { // grass bounce: restitution e, tangential friction impulse toward rolling, topspin kicks it on
+    st.y = BR; st.vy = -AIR.e * st.vy; const u2 = speed - st.vz, slip = u2 + st.w * BR, ju = Math.min(Math.abs(slip), AIR.fr * (1 + AIR.e) * Math.abs(st.vy / AIR.e)) * Math.sign(slip);
+    const nu = u2 - ju; st.vz = speed - nu; st.wx *= 0.9; st.w = -nu / BR; st.bounces = (st.bounces || 0) + 1;
+    if (st.vy < AIR.settle) { st.vy = 0; st.air = false; }
+  }
+  return st;
+}
+// rolling step of the same model (used by the flight solver to time the gather after the landing)
+function rollStepSim(st, dt, speed) {
+  const u = speed - st.vz, sp = Math.hypot(st.wx, u); if (sp < 1e-4) { st.z += speed * dt; return st; }
+  const a = ballDecel(sp), k = Math.max(0, sp - a * dt) / sp, dist = (sp + sp * k) / 2 * dt;
+  st.x += st.wx / sp * dist; st.z += -u / sp * dist + speed * dt; st.wx *= k; st.vz = speed - u * k; return st;
+}
+// rainbow launch: solve the flick velocity so the ball peaks ~AIR.peak m and lands at AIR.zLand ahead in the new lane (world dx);
+// returns the launch state plus the landing time and the time the rolling ball comes back to the dribble spot (gather)
+function solveFlick(p, dx, speed) {
+  const vy = Math.sqrt(2 * AIR.g * Math.max(0.5, AIR.peak - p.y));
+  let wx = dx, vz = -2, r = null;
+  const sim = () => { const st = { x: p.x, y: p.y, z: p.z, wx, vz, vy, w: AIR.spin, air: true }; let t = 0, tl, zl;
+    while (st.air && t < 3) { airStep(st, SUB, speed); t += SUB; if (st.bounces && tl === undefined) { tl = t; zl = st.z; } }
+    if (tl === undefined) { tl = t; zl = st.z; } const tSettle = t;
+    while (st.z < B0[2] && t < 4) { rollStepSim(st, SUB, speed); t += SUB; }
+    return { tl, zl, tSettle, tGather: t, xg: st.x }; };
+  for (let it = 0; it < 10; it++) { // lands AIR.zLand ahead; reaches the new lane's centre (+lead) by the time it is back at the feet
+    r = sim(); const ex = dx - (r.xg - p.x), ez = AIR.zLand - r.zl; wx += ex / r.tGather; vz += ez / r.tl;
+    if (Math.abs(ex) < 0.005 && Math.abs(ez) < 0.005) break; }
+  return { wx, vz, vy, w: AIR.spin, tLand: r.tl, tSettle: r.tSettle, tGather: r.tGather };
+}
 const _fp = { l: [new THREE.Vector3(), new THREE.Vector3()], r: [new THREE.Vector3(), new THREE.Vector3()] }, _fpv = { l: null, r: null }, _fpt = { l: null, r: null };
 const _gp = new THREE.Vector3();
 // ball position (G frame of the body at that time) tau seconds ahead, from the rolling model
@@ -1024,6 +1062,11 @@ function ballRoll(dt, lat) {
 }
 function capsuleAt(s, out0, out1) { const a = BS.subA; out0.lerpVectors(_fcp[s][0], _fc[s][0], a); out1.lerpVectors(_fcp[s][1], _fc[s][1], a); }
 function ballStep(dt, lat, now) {
+  if (BS.air) { // flight / bounce (rainbow): no foot contact, no gather until it is back on the grass
+    const st = { x: BS.p.x, y: BS.p.y, z: BS.p.z, wx: BS.wx, vz: BS.vz, vy: BS.vy, w: BS.w, air: true, bounces: 0 };
+    airStep(st, dt, S.speed); BS.p.set(st.x - lat, st.y, st.z); BS.wx = st.wx; BS.vz = st.vz; BS.vy = st.vy; BS.w = st.w; BS.air = st.air;
+    if (st.bounces) { BS.bounces = (BS.bounces || 0) + 1; if (BS.bounces === 1) { BS.tLand = now; if (BS.rel) BS.rel.land = { t: +(now - BS.rel.t).toFixed(3), x: +((P.x + BS.p.x) - BS.tgtX).toFixed(3), tl: +BS.flight.tLand.toFixed(3), tg: +BS.flight.tGather.toFixed(3), z: +BS.p.z.toFixed(2) }; } }
+    if (!BS.air) BS.p.y = BR; return; }
   // exact integration of dv/dt = -(a0 + cd v^2) along the ground velocity (frame-rate independent)
   let wx = BS.wx || 0, u = S.speed - (BS.vz || 0); const sp = Math.hypot(wx, u); let dist = 0;
   if (sp > 1e-4) {
@@ -1048,7 +1091,7 @@ function ballStep(dt, lat, now) {
     } else { BS.gstat.miss++; BS.gstat.gaps.push(+G.best.toFixed(3)); }
   }
   // safety net only (counted): ball lost behind / far away from the runner
-  if (!SK.m && (BS.p.z > 0.1 || Math.abs(BS.p.x) > 0.9 || BS.p.z < -1.6)) { BS.assist = (BS.assist || 0) + dt; // steer back (critically damped), no snap
+  if (!SK.m && !(BS.gather && !BS.gather.done && BS.gather.flight) && (BS.p.z > 0.1 || Math.abs(BS.p.x) > 0.9 || BS.p.z < -1.6)) { BS.assist = (BS.assist || 0) + dt; // steer back (critically damped), no snap
     const wn = 6; BS.wx += ((0 - BS.p.x) * wn * wn - (BS.wx - (BS.latv || 0)) * 2 * wn) * dt; BS.vz += ((B0[2] - BS.p.z) * wn * wn - BS.vz * 2 * wn) * dt; }
 }
 // feet as capsules (ankle -> toe tip, radius rf): no interpenetration; a forward-swinging foot in the jog = a dribble touch
@@ -1137,7 +1180,7 @@ function applySkillPose(dt) {
   // timed re-gather after a mocap move's release: the foot on the ball's side is steered (IK) to where the rolling ball WILL be
   // at G.t (physics prediction), and the touch happens there -> the ball arrives where the foot lands
   if (BS.gather && hero.bones.foot_l && dt > 0) {
-    const G = BS.gather, now = S.t; predictBall(Math.max(0, G.t - now), _gp);
+    const G = BS.gather, now = S.t; if (now < G.t0) {} else { predictBall(Math.max(0, G.t - now), _gp);
     if (!G.side) G.side = _gp.x > 0 ? 'r' : 'l';
     const w = now < G.t ? ease(Math.min(1, (now - G.t0) / Math.max(0.01, G.t - G.t0))) : G.done ? Math.max(0, 1 - (now - (G.tHit || G.t)) / 0.12) : 1;
     if (G.done && now - (G.tHit || G.t) > 0.12) BS.gather = null;
@@ -1147,7 +1190,7 @@ function applySkillPose(dt) {
       _gp.y = A; hero.group.localToWorld(_gp); fo.getWorldPosition(_mp); _mp.lerp(_gp, w); fo.getWorldQuaternion(_mq);
       _hint.r.set(0, 0.25, -1).applyQuaternion(_gq); ikLeg(G.side, _mp, _mq.clone(), _hint.r.clone());
     }
-  }
+  } }
   if (!list.length && !BS.gather && (BS.reach || Math.abs(BS.p.x) > 0.1) && hero.bones.foot_l) {
     BS.reachW = Math.min(1, (BS.reachW || 0) + dt / 0.1);
     let best = null, bd = 9; for (const s of SIDES) { b['foot_' + s].getWorldPosition(_a); hero.group.worldToLocal(_a); const dd = Math.abs(_a.x - BS.p.x); if (dd < bd) { bd = dd; best = s; } }
@@ -1177,7 +1220,10 @@ function applySkillPose(dt) {
       // forward: the capture ran at ~3 m/s, the game at 13-30 m/s, so the sole's backward drag is clamped to keep the ball in front
       BS.vz = Math.max(-1.2, Math.min(0.2, BS.vz));
       // sideways: the capture's foot swing is far faster than the lane shift needs; the ball leaves at most ROLL.relX faster than the body
-      if (SK.m && aimedMove(SK.m)) { // the touch aims the ball into the new lane: it arrives just ahead of where the body finishes
+      if (SK.m && SK.m.flick) { // rainbow: the heel flick launches the ball over the head into the new lane (ballistic, solved)
+        const d = Math.sign(P.toX - P.fromX) || 1, f = solveFlick(BS.p, P.toX + d * ROLL.leadX - P.x - BS.p.x, S.speed);
+        BS.wx = f.wx; BS.vz = f.vz; BS.vy = f.vy; BS.w = f.w; BS.air = true; BS.bounces = 0; BS.gT = f.tGather; BS.flight = f; BS.tgtX = P.toX + d * ROLL.leadX;
+      } else if (SK.m && aimedMove(SK.m)) { // the touch aims the ball into the new lane: it arrives just ahead of where the body finishes
         const lv = BS.latv || 0, d = Math.sign(P.toX - P.fromX) || 1, tNow = Math.min(1, SK.t) * SK.m.T; let tEnd = SK.m.T;
         if (SK.ev) for (let x = tNow; x <= SK.m.T; x += 0.005) if (laneProg(SK, x) >= 0.97) { tEnd = x; break; } // late dodge: the body arrives early
         const tRem = Math.max(0.12, (tEnd - tNow) / (SK.rate || 1) + 0.06);
@@ -1185,7 +1231,7 @@ function applySkillPose(dt) {
          const lo = SK.ev ? Math.max(3, Math.abs(lv)) : 3; BS.wx = lv + Math.max(-lo, Math.min(lo, (P.toX + d * ROLL.leadX - P.x - BS.p.x) / tRem - lv)); }
       if (SK.rel) { BS.rel = { t: S.t, x: +(BS.p.x * SK.rel).toFixed(3), wx: +(BS.wx * SK.rel).toFixed(2), vz: +BS.vz.toFixed(2), latv: +((BS.latv || 0) * SK.rel).toFixed(2), d: SK.rel }; SK.rel = 0; }
       BS.reach = true;
-      if (SK.m && aimedMove(SK.m) || BS.rel && S.t - BS.rel.t < 0.01) BS.gather = { t0: S.t, t: S.t + Math.max(ROLL.gatherT, BS.gT || 0), side: null, done: false };
+      if (SK.m && aimedMove(SK.m) || BS.rel && S.t - BS.rel.t < 0.01) BS.gather = { t0: S.t + (SK.m && SK.m.flick ? BS.flight.tSettle : 0), t: S.t + Math.max(ROLL.gatherT, BS.gT || 0), side: null, done: false, flight: !!(SK.m && SK.m.flick) };
     }
     ballRoll(dt, lat);
   }
@@ -1209,7 +1255,7 @@ function applySkillPose(dt) {
   // rolling without slipping: spin axis = up x ground travel (incl. run speed and lane shift), angle = distance / radius
   const tx = BS.p.x - old.x + lat + dl, tz = BS.p.z - old.z - dz, dist = Math.hypot(tx, tz);
   if (BS.p.y < BR + 0.03 && dist > 1e-5) { _a.set(tz, 0, -tx).normalize(); _q1.setFromAxisAngle(_a, dist / BR); fb.quaternion.premultiply(_q1); }
-  else if (BS.p.y >= BR + 0.03) { _q1.setFromAxisAngle(_a.set(1, 0, 0), dt * 12); fb.quaternion.premultiply(_q1); }
+  else if (BS.p.y >= BR + 0.03) { _q1.setFromAxisAngle(_a.set(1, 0, 0), (BS.air ? BS.w : -12) * dt); fb.quaternion.premultiply(_q1); }
   SK.pinned = pinned ? pinned.side + ':' + pinned.surf : null;
 }
 // streak trail + dust puff
