@@ -1239,6 +1239,8 @@ function sampleBody(m, t, d) {
   o.neckYaw = (c.headYaw || 0) * blend;
   o.armL = (c.armL || 0) * blend;
   o.armR = (c.armR || 0) * blend;
+  o.footL = c.footL || null; o.footR = c.footR || null;
+  o.ankleL = c.ankleL || 0; o.ankleR = c.ankleR || 0;
   o.plant = d > 0 ? 'r' : 'l';
   if (m.touches && m.touches.length) {
     const active = touchesOf(m, d).find(tc => tc.side && t >= tc.t0 - 0.1 && t <= tc.t1 + 0.02);
@@ -1259,6 +1261,86 @@ function sampleBody(m, t, d) {
   if (!c._applyLegs || onBall) { o.com = 0; o.hip = 0; o.knee = 0; }
   else { if (!preLoad && !after) o.com = 0; if (!after) o.hip = 0; }
   return o;
+}
+// Dribble run. The jog clip is only a base; this pose replaces it whenever a skill isn't on the ball.
+// Stride phase advances with distance travelled, so a planted foot moves back at exactly ground speed (no skate).
+// ?run=jog keeps the untouched clip, for the before/after reel.
+const DRIBBLE_RUN = !/[?&]run=jog/.test(location.search);
+const DR = { w: 0, phase: 0, count: 0, len: 1.2, touch: false };
+function dribblePose(dt) {
+  if (!DRIBBLE_RUN || !hero || !hero.bones || !hero.bones.foot_l || !FOOT_REL.l) return;
+  const skill = SK.m && SK.fade === 0 ? moveW(SK) : (SK.m ? 0.4 : 0);
+  const want = S.state === 'play' && P.grounded && P.slideT <= 0 && skill < 0.2 ? 1 : 0;
+  DR.w += (want - DR.w) * Math.min(1, Math.max(dt, 0) * 12);
+  if (!want) return;
+  if (dt > 0) {
+    const rate = S.speed / DR.len;
+    DR.phase += rate * dt;
+    if (DR.phase >= 1) {
+      const steps = Math.floor(DR.phase);
+      DR.phase -= steps; DR.count += steps;
+      const base = Math.max(1.05, Math.min(1.5, 0.9 + S.speed * 0.025));
+      DR.touch = DR.count % 3 === 2; // every third stride is the short touch stride
+      DR.len = DR.touch ? base * 0.78 : base;
+    }
+  }
+  if (DR.w < 0.04) return;
+  const w = DR.w, len = DR.len, stance = DR.touch ? 0.4 : 0.48, phase = DR.phase;
+  const bob = Math.sin(phase * Math.PI * 2) * 0.016;
+  hero.model.position.y += (-0.042 + bob) * w;
+  hero.group.updateMatrixWorld(true);
+  hero.group.getWorldQuaternion(_gq);
+  _fq.copy(_gq);
+  const b = hero.bones;
+  if (b.spine_02) rotFrame(b.spine_02, -0.19 * w, 0, 0); // ~11° forward
+  const arm = Math.sin(phase * Math.PI * 2);
+  if (b.upperarm_l) rotFrame(b.upperarm_l, arm * 0.7 * w, 0, 0.15 * w);
+  if (b.upperarm_r) rotFrame(b.upperarm_r, -arm * 0.7 * w, 0, -0.15 * w);
+  if (b.lowerarm_l) rotFrame(b.lowerarm_l, 0.45 * w, 0, 0);
+  if (b.lowerarm_r) rotFrame(b.lowerarm_r, 0.45 * w, 0, 0);
+  const dip = DR.touch && (phase < 0.1 || (phase > 0.5 && phase < 0.6));
+  if (b.neck_01) rotFrame(b.neck_01, (dip ? 0.42 : 0.05) * w, 0, 0);
+  if (b.Head) rotFrame(b.Head, (dip ? 0.22 : 0) * w, 0, 0);
+  hero.group.updateMatrixWorld(true);
+  for (const s of SIDES) {
+    const ph = (phase + (s === 'l' ? 0 : 0.5)) % 1;
+    const travel = stance * len;
+    const z0 = -travel * 0.5, z1 = z0 + travel;
+    let y = A, z, x = s === 'l' ? -0.12 : 0.12;
+    if (ph < stance) {
+      z = z0 + (ph / stance) * (z1 - z0);
+    } else {
+      const u = (ph - stance) / (1 - stance);
+      const kick = u < 0.42 ? 0 : (u - 0.42) / 0.58; // heel stays back, then the knee drives through
+      z = z1 + (z0 - z1) * kick;
+      const lift = Math.sin(Math.min(1, u / 0.7) * Math.PI);
+      y = A + (DR.touch ? 0.14 : 0.3) * lift;
+      if (u > 0.84) y = A + (y - A) * (1 - (u - 0.84) / 0.16);
+    }
+    // TODO(ball): on DR.touch the foot is aimed at the ball, but the push is still ROLL.ahead (0.25m). Gameplay should send it 0.5-1.0m ahead on these strides.
+    if (DR.touch && ph > stance - 0.08 && ph < stance + 0.18) { x += (BS.p.x - x) * 0.7; z += (Math.min(z, BS.p.z) - z) * 0.45; }
+    _mp.set(x, Math.max(A - 0.01, y), z);
+    hero.group.localToWorld(_mp);
+    b['foot_' + s].getWorldPosition(_tw[s]);
+    _tw[s].lerp(_mp, w);
+    b['foot_' + s].getWorldQuaternion(_tq[s]);
+    _hint[s].set(0, 0.4, ph < stance ? 0.15 : -0.7).applyQuaternion(_gq);
+    ikLeg(s, _tw[s], _tq[s], _hint[s]);
+  }
+}
+// Working-foot offset from the reference, in the group frame. 0 on the rollover sole so that pin stays authored.
+function driveWeight(m, d, side, t) {
+  if (!m || !m.touches) return 0;
+  const edge = Math.min(1, t / 0.05, Math.max(0, (m.T - t) / 0.08));
+  if (m.id === 'rollover') return side === mcRollSide(m, d) ? 0 : 0.4 * edge;
+  const tcs = touchesOf(m, d).filter(tc => tc.side);
+  if (!tcs.length) return 0;
+  const hit = tcs.find(tc => tc.hit) || tcs[tcs.length - 1];
+  const own = mcOwnSide(m, d);
+  if (own && side === own && t < hit.t0 + 0.02) return edge;
+  const near = tcs.find(tc => tc.side === side && t >= tc.t0 - 0.16 && t <= tc.t1 + 0.1);
+  if (near) return edge;
+  return 0;
 }
 function applyBodyAccent(b, body) {
   if (!body) return;
@@ -1432,8 +1514,22 @@ function applySkillPose(dt) {
           if (!L) sk.lock[key] = { x: _mp.x, px: P.x };
           else _mp.x = Math.max(_mp.x - 0.26, Math.min(_mp.x + 0.26, L.x - (P.x - L.px)));
         }
+        if (bodyNow && sk === SK && sk.fade === 0) {
+          const fw = driveWeight(sk.m, sk.d, s, t);
+          const fp = s === 'l' ? bodyNow.footL : bodyNow.footR;
+          if (fw > 0.02 && fp && fp.x !== undefined) {
+            _mp.x += fp.x * fw; _mp.y = Math.max(A - 0.02, _mp.y + (fp.y || 0) * fw); _mp.z += (fp.z || 0) * fw;
+          }
+        }
         hero.group.localToWorld(_mp);
         footOri(sk.m, sk.d, s, t, _mq); _mq.premultiply(_gq).multiply(FOOT_REL[s]);
+        if (bodyNow && sk === SK && sk.fade === 0) {
+          const touching = touchesOf(sk.m, sk.d).some(tc => tc.side === s && t >= tc.t0 && t <= tc.t1);
+          const ank = s === 'l' ? bodyNow.ankleL : bodyNow.ankleR;
+          if (!touching && ank > 0.45 && driveWeight(sk.m, sk.d, s, t) > 0.2) {
+            _mq.multiply(_q3.setFromEuler(_eu.set((ank - 0.4) * 0.5, 0, 0, 'XYZ')));
+          }
+        }
         _tw[s].lerp(_mp, w); _tq[s].slerp(_mq, w);
         footOri(sk.m, sk.d, s, t, _q3); _hint[s].lerp(_a.set(0, 0.2, -1).applyQuaternion(_q3).applyQuaternion(_gq), w);
       }
@@ -1463,12 +1559,14 @@ function applySkillPose(dt) {
     const px = BS.p.x + ((BS.wx || 0) - (BS.latv || 0)) * 0.06, want = px - Math.sign(px) * (BR + ROLL.rf + 0.03), off = Math.max(-0.4, Math.min(0.4, want - _mp.x)) * ease(BS.reachW);
     if (Math.abs(off) > 0.005) { _mp.x += off; hero.group.localToWorld(_mp); fo.getWorldQuaternion(_mq); _hint.l.set(0, 0.25, -1).applyQuaternion(_gq); ikLeg(best, _mp, _mq.clone(), _hint.l.clone()); }
   } else BS.reachW = 0;
+  dribblePose(dt);
   // ---- ball: authored contact (pinned to the real sole) + rolling physics everywhere else ----
   const dz = S.speed * dt, lat = dt > 0 ? P.x - BS.lastX : 0; if (dt > 0) BS.lastX = P.x; // (dt=0 frames: carry the lane shift to the next real step)
   const old = _np.copy(BS.p);
   let pinned = null, phys = true;
   if (SK.m && SK.fade === 0) {
     const t = Math.min(1, SK.t) * SK.m.T, tcs = touchesOf(SK.m, SK.d), tc = tcs.find(tc => tc.side && t >= tc.t0 && t <= tc.t1);
+    // TODO(ball): elastico's two touches are one ankle wrap. The foot now travels through the gap; pinning the ball across that gap belongs to the ball track.
     const last = tcs.reduce((a, c) => Math.max(a, c.t1), 0);
     if (tc) {
       // contact: pin the ball to the ACTUAL foot surface after IK (exact contact even if IK clamps or blends)
