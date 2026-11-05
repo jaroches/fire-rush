@@ -186,8 +186,8 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair, roll, chopC, stepC] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=11').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/chop.glb?v=11').catch(() => null), loadGLB('assets/stepover.glb?v=12').catch(() => null)]);
-    if (roll) anims.animations.push(...roll.animations); if (chopC) anims.animations.push(...chopC.animations); if (stepC) anims.animations.push(...stepC.animations);
+    const [hero, anims, hair, roll, chopC, stepC, roulC] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=11').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/chop.glb?v=11').catch(() => null), loadGLB('assets/stepover.glb?v=12').catch(() => null), loadGLB('assets/roulette.glb?v=13').catch(() => null)]);
+    if (roll) anims.animations.push(...roll.animations); if (chopC) anims.animations.push(...chopC.animations); if (stepC) anims.animations.push(...stepC.animations); if (roulC) anims.animations.push(...roulC.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
     let head = null; root.traverse(o => { if (o.isBone && o.name === 'Head') head = o; });
@@ -506,6 +506,13 @@ function gameOver() {
 //           upperarm_r +z / upperarm_l -z = arm out).
 const SKILL_BONUS = 150, DODGE_WIN = 7.5, COMBO_WIN = 3.2;
 // monotone cubic (Fritsch-Carlson) so lateral travel never stalls at a key, unlike the eased per-segment kf
+// body lateral progress: the move's lane curve, but never slower than needed to clear a threat that is already close
+// (late dodges: the body leaves the old lane by ~0.45 of the lane width before the obstacle arrives, no clipping through it)
+function laneProg(sk) {
+  const t = Math.min(1, sk.t) * sk.m.T, lp = laneAt(t, sk.m.lane);
+  if (!sk.ev) return lp; const tg = t / (sk.rate || 1), u = Math.min(1, tg / sk.ev);
+  return Math.max(lp, 0.55 * u * u * (3 - 2 * u));
+}
 function laneAt(t, k) {
   const n = k.length; if (t <= k[0][0]) return k[0][1]; if (t >= k[n - 1][0]) return k[n - 1][1];
   const m = []; for (let i = 0; i < n; i++) {
@@ -674,6 +681,19 @@ const STEPOVER_MC = { id: 'scissor', mc: true, name: 'STEP-OVER!', sub: 'BODY FE
 STEPOVER_MC.beat = STEPOVER_MC.beatT / STEPOVER_MC.T;
 const mcRollSide = (m, d) => { const f = (m.touches[0] && m.touches[0].foot) || 'l'; return d < 0 ? sw(f) : f; };
 const mcOwnSide = (m, d) => m.own ? (d < 0 ? sw(m.own) : m.own) : null;
+const mcOwns = (m, d, side) => m.own === 'both' || side === mcOwnSide(m, d);
+// ROULETTE (mocap): Zaleto "The Spin Turn" slow-mo (youtube mVRrqneCapU, 9.3-13.8 s), capture frames 65..290 @50 fps -> 41 keys.
+// Capture (yaw removed) drives pelvis drop, trunk lean, wide arms and head; the 360 spin (CCW for d=+1), both sole drags and the
+// feet are authored from spec.md (single-camera pose can't resolve a full turn or keep the soles on the ball reliably).
+const ROULETTE_F = {"L":[[[-0.3843,0.1091,-0.1256],[0.0059,0.2197,-0.1933],[-0.3818,0.0683,-0.1096],[0.0167,0.1839,-0.2254],[-0.3994,0.0429,-0.1959],[0.0292,0.1748,-0.3586]],[[-0.3405,0.104,-0.1507],[-0.028,0.2165,-0.1369],[-0.3366,0.0619,-0.1335],[-0.0171,0.181,-0.1623],[-0.3667,0.0463,-0.2354],[-0.0128,0.1648,-0.2913]],[[-0.252,0.1157,-0.2085],[-0.0134,0.2527,-0.126],[-0.2441,0.0733,-0.1909],[0.0013,0.2204,-0.1495],[-0.2797,0.0573,-0.2958],[0.0025,0.198,-0.2692]],[[-0.1649,0.1219,-0.2422],[0.0286,0.2961,-0.1502],[-0.1527,0.079,-0.2238],[0.0468,0.2652,-0.1729],[-0.1831,0.0548,-0.3254],[0.0432,0.2341,-0.2791]],[[-0.1396,0.1174,-0.2196],[0.0499,0.3277,-0.1482],[-0.1272,0.0739,-0.1985],[0.0699,0.2971,-0.1649],[-0.1586,0.0419,-0.3034],[0.0627,0.2568,-0.2618]],[[-0.1281,0.1256,-0.2],[0.1012,0.34,-0.1591],[-0.1182,0.0818,-0.1765],[0.1286,0.309,-0.1739],[-0.1548,0.0509,-0.2835],[0.1265,0.2772,-0.29]],[[-0.1653,0.1296,-0.1543],[0.1375,0.3077,-0.1568],[-0.161,0.0858,-0.1277],[0.1681,0.2737,-0.172],[-0.2008,0.0544,-0.2276],[0.1668,0.2423,-0.3029]],[[-0.1559,0.1272,-0.1495],[0.1672,0.2677,-0.1678],[-0.1514,0.0841,-0.1233],[0.201,0.232,-0.1856],[-0.1834,0.0463,-0.2129],[0.2073,0.2043,-0.3198]],[[-0.2077,0.1097,-0.1031],[0.2026,0.2346,-0.1687],[-0.2068,0.0659,-0.0754],[0.2395,0.2015,-0.1873],[-0.2389,0.0225,-0.1607],[0.2525,0.1869,-0.3276]],[[-0.3488,0.0844,-0.0151],[0.2225,0.2001,-0.1581],[-0.3569,0.0386,0.0146],[0.2614,0.1695,-0.1768],[-0.4045,0.0,-0.0735],[0.2866,0.1627,-0.3217]],[[-0.4348,0.1004,0.0194],[0.2126,0.1758,-0.1196],[-0.4498,0.054,0.0491],[0.2501,0.1444,-0.1347],[-0.5053,0.0159,-0.0462],[0.2841,0.13,-0.2788]],[[-0.4978,0.1361,0.0099],[0.2199,0.1712,-0.0907],[-0.518,0.0912,0.039],[0.2569,0.1399,-0.1023],[-0.5767,0.054,-0.0542],[0.2906,0.1235,-0.2425]],[[-0.5259,0.1883,-0.0429],[0.2352,0.1734,-0.0673],[-0.548,0.1459,-0.0143],[0.2723,0.1428,-0.0759],[-0.6084,0.1099,-0.1019],[0.3068,0.1368,-0.2158]],[[-0.5256,0.2426,-0.1289],[0.1706,0.1603,-0.0225],[-0.5497,0.202,-0.1032],[0.2071,0.1306,-0.0268],[-0.6123,0.1734,-0.1904],[0.239,0.1313,-0.1744]],[[-0.5134,0.2718,-0.2102],[0.0597,0.1487,0.0033],[-0.54,0.2313,-0.1885],[0.0927,0.1184,0.0073],[-0.5988,0.2037,-0.2808],[0.1199,0.115,-0.1438]],[[-0.546,0.2602,-0.2152],[0.1065,0.1757,-0.0266],[-0.5742,0.2197,-0.1955],[0.138,0.1462,-0.0218],[-0.6381,0.188,-0.287],[0.1667,0.1378,-0.1548]],[[-0.5933,0.2686,-0.1956],[0.1439,0.2029,-0.0636],[-0.623,0.2293,-0.1739],[0.1748,0.1743,-0.061],[-0.6965,0.1904,-0.2577],[0.201,0.1649,-0.1774]],[[-0.5799,0.2913,-0.1975],[0.1115,0.2176,-0.0779],[-0.6075,0.2534,-0.1732],[0.1404,0.1884,-0.076],[-0.6813,0.2137,-0.2602],[0.1563,0.1801,-0.196]],[[-0.5179,0.3061,-0.2681],[0.0326,0.2149,-0.0748],[-0.5453,0.2685,-0.2449],[0.0603,0.1856,-0.0712],[-0.6052,0.2366,-0.3353],[0.0713,0.1809,-0.2031]],[[-0.4844,0.3196,-0.3414],[-0.0145,0.2108,-0.0909],[-0.5153,0.2827,-0.3206],[0.0114,0.18,-0.085],[-0.5693,0.2579,-0.4014],[0.0177,0.169,-0.2152]],[[-0.4617,0.3215,-0.3773],[-0.0299,0.2065,-0.0993],[-0.494,0.285,-0.3597],[-0.0041,0.1746,-0.0935],[-0.5474,0.2642,-0.4452],[0.0073,0.1609,-0.225]],[[-0.3952,0.333,-0.4114],[-0.0396,0.2024,-0.1082],[-0.4253,0.2964,-0.3972],[-0.0143,0.1707,-0.1045],[-0.4712,0.2824,-0.4988],[0.004,0.1569,-0.2429]],[[-0.3568,0.3333,-0.4234],[-0.0596,0.1913,-0.1216],[-0.388,0.2966,-0.4087],[-0.0363,0.1604,-0.1192],[-0.4323,0.2795,-0.5108],[-0.0148,0.1437,-0.2577]],[[-0.3006,0.3336,-0.4069],[-0.0277,0.1927,-0.1195],[-0.3317,0.2981,-0.3897],[-0.0033,0.1621,-0.1145],[-0.3697,0.2727,-0.4859],[0.0263,0.1403,-0.2476]],[[-0.2193,0.3295,-0.396],[-0.0152,0.1983,-0.1225],[-0.2491,0.2941,-0.3811],[0.0092,0.1674,-0.1136],[-0.2759,0.2661,-0.479],[0.0475,0.1453,-0.2371]],[[-0.1593,0.329,-0.3939],[0.0032,0.2042,-0.1248],[-0.1893,0.2929,-0.3822],[0.0288,0.1741,-0.1122],[-0.209,0.2687,-0.4822],[0.0758,0.156,-0.2293]],[[-0.1223,0.3138,-0.3846],[0.0712,0.2129,-0.0998],[-0.1522,0.2778,-0.3757],[0.0981,0.1844,-0.0843],[-0.1629,0.2642,-0.4786],[0.1559,0.1718,-0.2019]],[[-0.1114,0.2885,-0.3678],[0.1584,0.2137,-0.074],[-0.1395,0.2513,-0.3621],[0.1889,0.1863,-0.0566],[-0.1398,0.2534,-0.4751],[0.2592,0.1849,-0.1787]],[[-0.1439,0.2672,-0.3776],[0.2291,0.2112,-0.063],[-0.1718,0.2287,-0.3752],[0.2623,0.1841,-0.0447],[-0.1695,0.2377,-0.5],[0.3372,0.1858,-0.1654]],[[-0.1851,0.251,-0.383],[0.2436,0.2039,-0.0726],[-0.2141,0.2136,-0.3824],[0.277,0.1765,-0.056],[-0.2148,0.2313,-0.5088],[0.3522,0.1787,-0.1777]],[[-0.2069,0.2485,-0.3743],[0.286,0.2026,-0.0492],[-0.2349,0.2115,-0.3746],[0.3214,0.1757,-0.0321],[-0.2393,0.2426,-0.5032],[0.3957,0.1861,-0.1567]],[[-0.1954,0.2636,-0.3423],[0.3323,0.2135,-0.0263],[-0.2214,0.2275,-0.3394],[0.3694,0.1873,-0.0082],[-0.2242,0.257,-0.4705],[0.4416,0.2048,-0.1375]],[[-0.1668,0.2909,-0.2806],[0.3408,0.2178,-0.0325],[-0.1937,0.2571,-0.2699],[0.3781,0.1925,-0.0147],[-0.191,0.2828,-0.3948],[0.4544,0.2252,-0.1472]],[[-0.1239,0.3171,-0.2019],[0.3503,0.2209,-0.0351],[-0.1504,0.2856,-0.1845],[0.3874,0.1955,-0.0162],[-0.1378,0.2966,-0.3046],[0.4686,0.2281,-0.1507]],[[-0.137,0.3026,-0.2109],[0.2998,0.2217,-0.0652],[-0.1661,0.2722,-0.1955],[0.3323,0.1959,-0.0448],[-0.1568,0.2859,-0.3126],[0.4047,0.2148,-0.1852]],[[-0.1956,0.3076,-0.265],[0.246,0.2213,-0.0984],[-0.2287,0.2792,-0.2538],[0.2717,0.1957,-0.075],[-0.2283,0.2962,-0.3733],[0.3318,0.2019,-0.2122]],[[-0.2211,0.3436,-0.2881],[0.2335,0.2233,-0.1023],[-0.2549,0.3173,-0.28],[0.2566,0.1984,-0.0789],[-0.2511,0.3383,-0.4063],[0.3168,0.1979,-0.2117]],[[-0.2669,0.3444,-0.328],[0.1842,0.2235,-0.1364],[-0.3024,0.319,-0.3269],[0.2034,0.1982,-0.1146],[-0.2944,0.3431,-0.4585],[0.2668,0.1898,-0.248]],[[-0.2869,0.3254,-0.3643],[0.1672,0.2331,-0.1583],[-0.3221,0.2997,-0.3698],[0.1847,0.2078,-0.1377],[-0.3039,0.3323,-0.5058],[0.2523,0.1944,-0.2688]],[[-0.287,0.3062,-0.361],[0.1758,0.2369,-0.1598],[-0.3208,0.2796,-0.369],[0.1932,0.2116,-0.139],[-0.2942,0.322,-0.5081],[0.2647,0.198,-0.2702]],[[-0.3014,0.2865,-0.3532],[0.1875,0.2433,-0.1658],[-0.3353,0.259,-0.3618],[0.2051,0.2183,-0.1451],[-0.3092,0.3033,-0.5016],[0.2763,0.2032,-0.2789]]],"R":[[[-0.0058,0.1476,-0.1893],[0.3762,0.1118,-0.123],[-0.0164,0.1105,-0.2207],[0.3737,0.0714,-0.1073],[-0.0286,0.0993,-0.3511],[0.391,0.0499,-0.1918]],[[0.0274,0.1507,-0.134],[0.3334,0.0987,-0.1476],[0.0167,0.1139,-0.1589],[0.3295,0.0568,-0.1307],[0.0126,0.0974,-0.2852],[0.359,0.047,-0.2304]],[[0.0131,0.1835,-0.1234],[0.2467,0.0937,-0.2041],[-0.0013,0.1491,-0.1464],[0.239,0.0507,-0.1869],[-0.0024,0.127,-0.2636],[0.2738,0.0416,-0.2896]],[[-0.028,0.2182,-0.147],[0.1614,0.0836,-0.2371],[-0.0458,0.1846,-0.1692],[0.1495,0.0393,-0.2191],[-0.0423,0.1548,-0.2732],[0.1792,0.0213,-0.3186]],[[-0.0488,0.2451,-0.1451],[0.1367,0.0745,-0.215],[-0.0684,0.2115,-0.1615],[0.1245,0.0296,-0.1944],[-0.0614,0.1733,-0.2563],[0.1553,0.0041,-0.297]],[[-0.0991,0.2476,-0.1558],[0.1254,0.0804,-0.1958],[-0.1259,0.2122,-0.1703],[0.1158,0.0356,-0.1728],[-0.1239,0.1815,-0.2839],[0.1515,0.0122,-0.2776]],[[-0.1346,0.2093,-0.1535],[0.1618,0.0912,-0.1511],[-0.1645,0.1704,-0.1684],[0.1577,0.0475,-0.125],[-0.1633,0.1398,-0.2966],[0.1966,0.0242,-0.2228]],[[-0.1637,0.1646,-0.1643],[0.1526,0.0871,-0.1463],[-0.1968,0.1234,-0.1818],[0.1482,0.044,-0.1207],[-0.2029,0.0951,-0.3131],[0.1795,0.013,-0.2085]],[[-0.1984,0.1256,-0.1652],[0.2033,0.0796,-0.1009],[-0.2345,0.0863,-0.1834],[0.2024,0.0365,-0.0738],[-0.2472,0.0696,-0.3207],[0.2338,0.0,-0.1573]],[[-0.2178,0.0882,-0.1548],[0.3414,0.0811,-0.0148],[-0.2559,0.051,-0.1731],[0.3494,0.0377,0.0143],[-0.2806,0.0396,-0.3149],[0.396,0.0088,-0.0719]],[[-0.2081,0.0662,-0.1171],[0.4257,0.1127,0.019],[-0.2448,0.0285,-0.1319],[0.4404,0.0701,0.0481],[-0.2781,0.0081,-0.273],[0.4947,0.0431,-0.0452]],[[-0.2153,0.0603,-0.0888],[0.4874,0.1593,0.0097],[-0.2515,0.0229,-0.1001],[0.5072,0.1192,0.0382],[-0.2845,0.0005,-0.2374],[0.5646,0.0936,-0.0531]],[[-0.2302,0.0597,-0.0659],[0.5149,0.2157,-0.042],[-0.2666,0.0228,-0.0743],[0.5365,0.1782,-0.014],[-0.3003,0.0106,-0.2113],[0.5956,0.1543,-0.0998]],[[-0.167,0.0588,-0.0221],[0.5146,0.2688,-0.1262],[-0.2027,0.023,-0.0262],[0.5382,0.2336,-0.1011],[-0.234,0.0177,-0.1707],[0.5995,0.2172,-0.1864]],[[-0.0585,0.068,0.0032],[0.5026,0.2952,-0.2058],[-0.0908,0.0322,0.0071],[0.5287,0.2604,-0.1846],[-0.1174,0.0239,-0.1408],[0.5863,0.2443,-0.2749]],[[-0.1043,0.0859,-0.026],[0.5346,0.2898,-0.2107],[-0.1351,0.0511,-0.0214],[0.5621,0.2554,-0.1914],[-0.1632,0.0375,-0.1515],[0.6247,0.2363,-0.281]],[[-0.1409,0.1055,-0.0623],[0.5808,0.3068,-0.1914],[-0.1712,0.0717,-0.0597],[0.61,0.2739,-0.1703],[-0.1968,0.0577,-0.1737],[0.6819,0.2494,-0.2523]],[[-0.1092,0.1259,-0.0763],[0.5677,0.3266,-0.1933],[-0.1374,0.0919,-0.0744],[0.5947,0.2946,-0.1696],[-0.153,0.0808,-0.1919],[0.667,0.2694,-0.2547]],[[-0.0319,0.1379,-0.0732],[0.5071,0.3295,-0.2625],[-0.0591,0.1041,-0.0697],[0.5338,0.2978,-0.2398],[-0.0698,0.0974,-0.1989],[0.5925,0.2777,-0.3283]],[[0.0142,0.1427,-0.089],[0.4742,0.3365,-0.3342],[-0.0112,0.1077,-0.0833],[0.5044,0.3061,-0.3139],[-0.0173,0.0957,-0.2107],[0.5573,0.2919,-0.393]],[[0.0293,0.1413,-0.0972],[0.452,0.3341,-0.3694],[0.004,0.1053,-0.0915],[0.4836,0.3044,-0.3521],[-0.0071,0.0898,-0.2203],[0.536,0.294,-0.4359]],[[0.0387,0.1391,-0.1059],[0.3869,0.3331,-0.4027],[0.014,0.1034,-0.1023],[0.4163,0.3029,-0.3889],[-0.0039,0.0865,-0.2378],[0.4614,0.2977,-0.4884]],[[0.0583,0.132,-0.1191],[0.3494,0.3262,-0.4145],[0.0356,0.0974,-0.1167],[0.3798,0.2961,-0.4001],[0.0145,0.0771,-0.2523],[0.4233,0.2876,-0.5001]],[[0.0271,0.1274,-0.117],[0.2943,0.316,-0.3984],[0.0033,0.0929,-0.1121],[0.3248,0.2871,-0.3815],[-0.0257,0.0661,-0.2424],[0.3619,0.2692,-0.4757]],[[0.0149,0.1306,-0.1199],[0.2147,0.297,-0.3877],[-0.009,0.0958,-0.1112],[0.2439,0.2679,-0.3731],[-0.0465,0.067,-0.2321],[0.2701,0.2454,-0.469]],[[-0.0032,0.1329,-0.1222],[0.156,0.2853,-0.3856],[-0.0282,0.0987,-0.1099],[0.1854,0.2555,-0.3742],[-0.0742,0.0722,-0.2245],[0.2046,0.2355,-0.4721]],[[-0.0697,0.1288,-0.0977],[0.1197,0.2636,-0.3766],[-0.096,0.0959,-0.0825],[0.149,0.2339,-0.3678],[-0.1526,0.0728,-0.1977],[0.1595,0.2226,-0.4685]],[[-0.1551,0.1133,-0.0724],[0.109,0.2368,-0.3601],[-0.185,0.0809,-0.0554],[0.1365,0.2056,-0.3545],[-0.2537,0.0664,-0.175],[0.1369,0.2077,-0.4651]],[[-0.2243,0.0978,-0.0617],[0.1409,0.222,-0.3697],[-0.2568,0.0651,-0.0438],[0.1681,0.1895,-0.3673],[-0.3301,0.0529,-0.1619],[0.1659,0.1979,-0.4895]],[[-0.2385,0.0879,-0.0711],[0.1812,0.2137,-0.375],[-0.2712,0.0549,-0.0549],[0.2096,0.1825,-0.3744],[-0.3448,0.0431,-0.174],[0.2103,0.2,-0.4981]],[[-0.28,0.0788,-0.0481],[0.2025,0.2154,-0.3665],[-0.3147,0.0459,-0.0314],[0.23,0.1844,-0.3668],[-0.3874,0.0422,-0.1534],[0.2343,0.2156,-0.4927]],[[-0.3254,0.0809,-0.0258],[0.1913,0.228,-0.3351],[-0.3616,0.0483,-0.0081],[0.2167,0.1975,-0.3323],[-0.4323,0.052,-0.1347],[0.2195,0.2269,-0.4607]],[[-0.3336,0.0835,-0.0318],[0.1633,0.2494,-0.2747],[-0.3702,0.0518,-0.0144],[0.1896,0.2213,-0.2642],[-0.4449,0.0696,-0.1441],[0.187,0.246,-0.3865]],[[-0.343,0.0847,-0.0344],[0.1213,0.267,-0.1977],[-0.3793,0.053,-0.0159],[0.1473,0.2412,-0.1806],[-0.4587,0.0698,-0.1475],[0.1349,0.2496,-0.2982]],[[-0.2935,0.0949,-0.0639],[0.1341,0.2553,-0.2065],[-0.3253,0.0636,-0.0438],[0.1626,0.2309,-0.1914],[-0.3962,0.0687,-0.1813],[0.1535,0.2426,-0.3061]],[[-0.2409,0.1046,-0.0963],[0.1915,0.2711,-0.2594],[-0.266,0.0748,-0.0734],[0.2239,0.2495,-0.2485],[-0.3248,0.0696,-0.2077],[0.2235,0.266,-0.3655]],[[-0.2286,0.1088,-0.1002],[0.2165,0.3111,-0.2821],[-0.2512,0.0802,-0.0772],[0.2496,0.2916,-0.2742],[-0.3101,0.0684,-0.2072],[0.2459,0.3114,-0.3978]],[[-0.1803,0.1182,-0.1335],[0.2613,0.3203,-0.3211],[-0.1991,0.0898,-0.1122],[0.2961,0.3021,-0.3201],[-0.2612,0.0698,-0.2428],[0.2883,0.3242,-0.4489]],[[-0.1637,0.1307,-0.155],[0.2809,0.3055,-0.3567],[-0.1808,0.1027,-0.1348],[0.3154,0.2868,-0.3621],[-0.247,0.077,-0.2631],[0.2976,0.3154,-0.4952]],[[-0.1721,0.1329,-0.1565],[0.281,0.2867,-0.3534],[-0.1891,0.1048,-0.1361],[0.314,0.2669,-0.3612],[-0.2591,0.0782,-0.2645],[0.288,0.3035,-0.4974]],[[-0.1836,0.137,-0.1623],[0.2951,0.2701,-0.3458],[-0.2008,0.1093,-0.1421],[0.3283,0.2495,-0.3542],[-0.2705,0.0812,-0.273],[0.3027,0.288,-0.4911]]]};
+let ROULETTE_MC = null;
+function rouletteMC() {
+  if (ROULETTE_MC) return ROULETTE_MC; const base = MOVES.find(x => x.id === 'roulette'); if (!base) return null;
+  const m = JSON.parse(JSON.stringify(base, (k, v) => (k === '_t' || k === '_fk') ? undefined : v));
+  Object.assign(m, { mc: true, clip: 'Roulette', F: ROULETTE_F, own: 'both', warp: [[0, 0], [m.T, 40]], bones: {},
+    lane: [[0, 0], [0.12 * m.T / 0.8, 0.04], [0.3 * m.T / 0.8, 0.4], [0.42 * m.T / 0.8, 0.66], [0.6 * m.T / 0.8, 0.93], [m.T, 1]] });
+  m.beat = m.beatT / m.T; return (ROULETTE_MC = m);
+}
 const _mv = new THREE.Vector3(), _mv2 = new THREE.Vector3(), _mo = new THREE.Quaternion();
 function mcGrounded(m, d, side, t) { return mcRaw(m, d, side === 'l' ? 0 : 1, t, _mv2).y < 0.075; }
 // foot orientation from the captured heel->toe vector (yaw + pitch), plus the sole-contact tilt
@@ -689,11 +709,11 @@ function mcFootOri(m, d, side, t, out) {
 }
 // ankle target in G: captured ankle; the rolling foot is raised onto the top of the ball around the contact window
 function mcAnkle(m, d, side, t, out) {
-  if (side === mcOwnSide(m, d)) { const ks = footKeys(m, d, side); let i = 0; while (i < ks.length - 2 && t > ks[i + 1].t) i++;
+  if (mcOwns(m, d, side)) { const ks = footKeys(m, d, side); let i = 0; while (i < ks.length - 2 && t > ks[i + 1].t) i++;
     if (t <= ks[0].t) out.copy(ks[0].p); else if (t >= ks[ks.length - 1].t) out.copy(ks[ks.length - 1].p); else hermite(ks[i].p, ks[i].v, ks[i + 1].p, ks[i + 1].v, ks[i].t, ks[i + 1].t, t, out);
     out.y = Math.max(out.y, A - 0.01); b2g(bodyAt(m, d, t), out);
     // circle round the ball where it actually is (it may have rolled ahead / aside in the dribble), back to the authored plant
-    const k = m === SK.m ? Math.min(1, Math.max(0, Math.min(t / 0.04, (0.3 - t) / 0.07))) : 0; if (k > 0) { out.z += Math.max(-0.45, Math.min(0.4, BS.p.z - B0[2])) * k; out.x += Math.max(-0.25, Math.min(0.25, BS.p.x)) * k; }
+    const k = m === SK.m && m.id === "scissor" ? Math.min(1, Math.max(0, Math.min(t / 0.04, (0.3 - t) / 0.07))) : 0; if (k > 0) { out.z += Math.max(-0.45, Math.min(0.4, BS.p.z - B0[2])) * k; out.x += Math.max(-0.25, Math.min(0.25, BS.p.x)) * k; }
     return out; }
   mcRaw(m, d, side === 'l' ? 0 : 1, t, out); out.y += MC_Y;
   const tc = m.touches[0];
@@ -749,7 +769,7 @@ function startLaneMove(d) {
 }
 function startRoll(d) {
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
-  beginMove(); SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.rolls = (SK.rolls || 0) + 1;
+  beginMove(); SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.ev = 0; SK.rolls = (SK.rolls || 0) + 1;
 }
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
 function pickMove() { let i; do { i = (Math.random() * MOVES.length) | 0; } while (i === SK.last && MOVES.length > 1); SK.last = i; return MOVES[i]; }
@@ -757,11 +777,12 @@ function startSkill(d, forced, th) {
   let m = forced ? MOVES.find(x => x.id === forced) : pickMove();
   if (m && m.id === 'chop' && mocapOn('Chop')) m = CHOP_MC;
   if (m && m.id === 'scissor' && mocapOn('Stepover')) m = STEPOVER_MC;
+  if (m && m.id === 'roulette' && mocapOn('Roulette')) m = rouletteMC() || m;
   if (forced) SK.last = MOVES.findIndex(x => x.id === m.id);
   SK.lock = {}; SK.bz = Math.max(-0.4, Math.min(0.3, BS.p.z - B0[2])); SK.bx = Math.max(-0.2, Math.min(0.2, BS.p.x));
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
-  beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1;
-  if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); } SK.fov = 3.5; shake = Math.max(shake, 0.08);
+  beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1; SK.ev = 0;
+  if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); SK.ev = Math.max(0.08, th.tti * 0.75); } SK.fov = 3.5; shake = Math.max(shake, 0.08);
   SK.count[m.id] = (SK.count[m.id] || 0) + 1;
   puff();
   // skill dodge: a rival close ahead in the lane we're leaving
@@ -805,7 +826,7 @@ function b2g(bd, v) { const c = Math.cos(bd.spin), s = Math.sin(bd.spin), x = v.
 function g2b(bd, v) { const c = Math.cos(-bd.spin), s = Math.sin(-bd.spin), x = v.x - bd.px, z = v.z - bd.pz; v.x = x * c + z * s; v.z = -x * s + z * c; return v; }
 // foot orientation (desired) in G at time t, for the ACTUAL side
 function footOri(m, d, side, t, out) {
-  if (m.mc) return mcFootOri(m, d, side, t, out);
+  if (m.mc && !mcOwns(m, d, side)) return mcFootOri(m, d, side, t, out);
   const f = m.feet[d < 0 ? sw(side) : side] || {};
   let sp = 0; for (const tc of m.touches || []) if (tc.surf === 'sole' && tc.foot === (d < 0 ? sw(side) : side)) { const k = Math.min(1, Math.max(0, Math.min(t - tc.t0 + 0.05, tc.t1 + 0.05 - t) / 0.05)); sp = Math.max(sp, 0.3 * k); }
   _eu.set(kf(t, f.pitch) + sp, d * kf(t, f.yaw) + bodyAt(m, d, t).spin, d * kf(t, f.roll), 'YXZ');
@@ -920,7 +941,7 @@ const _jp = new THREE.Vector3(), _jq = new THREE.Quaternion(), _mp = new THREE.V
 // MOCAP roll-over: Rollover_L / Rollover_R clips (MediaPipe monocular capture -> Blender retarget, see mocap/README) drive
 // pelvis, spine, head and arms; feet stay on the IK + ball-pin solver. ?roll=code (or __rollMocap=false) = code-keyframed fallback.
 window.__rollMocap = !/[?&]roll=code/.test(location.search);
-const MC_CLIPS = ['Rollover', 'Chop', 'Stepover'];
+const MC_CLIPS = ['Rollover', 'Chop', 'Stepover', 'Roulette'];
 const mocapOn = (clip = 'Rollover') => window.__rollMocap && hero && hero.actions && hero.actions[clip + '_L'] && hero.actions[clip + '_R'];
 function driveMocap() {
   if (!hero || !hero.actions || !hero.actions.Rollover_L) return;
@@ -1059,7 +1080,7 @@ function applySkillPose(dt) {
       for (const sk of list) {
         const w = moveW(sk); if (w <= 0) continue; const t = Math.min(1, sk.t) * sk.m.T;
         footTargetG(sk.m, sk.d, s, t, _mp);
-        if (sk.m.mc && sk.fade === 0 && s !== mcRollSide(sk.m, sk.d) && s !== mcOwnSide(sk.m, sk.d)) { // plant lock: grounded support foot holds its lane position
+        if (sk.m.mc && sk.fade === 0 && s !== mcRollSide(sk.m, sk.d) && !mcOwns(sk.m, sk.d, s)) { // plant lock: grounded support foot holds its lane position
           sk.lock = sk.lock || {}; const L = sk.lock[s];
           if (mcGrounded(sk.m, sk.d, s, t)) { if (!L) sk.lock[s] = { x: _mp.x, px: P.x, z: _mp.z }; else { const lx = L.x - (P.x - L.px), cx = Math.max(_mp.x - 0.22, Math.min(_mp.x + 0.22, lx)), wxp = P.x + cx; if (L.w !== undefined && sk === SK) BS.slide = (BS.slide || 0) + Math.abs(wxp - L.w); L.w = wxp; _mp.x = cx; _mp.z = L.z; } }
           else sk.lock[s] = null;
@@ -1190,7 +1211,7 @@ function updatePlay(dt, rdt = dt) {
   // lanes
   if (SK.m && SK.fade === 0 && SK.m.lane && P.laneT < 1) {
     // skill moves travel across THROUGH the move: lateral position follows the move's own lane curve
-    const lp = laneAt(Math.min(1, SK.t) * SK.m.T, SK.m.lane); P.x = P.fromX + (P.toX - P.fromX) * lp; P.laneT = Math.min(0.999, Math.max(0, lp));
+    const lp = laneProg(SK); P.x = P.fromX + (P.toX - P.fromX) * lp; P.laneT = Math.min(0.999, Math.max(0, lp));
   } else if (P.laneT < 1) {
     // lateral translation is decoupled from the visual move and runs on real time so controls stay snappy in slow-mo
     P.laneT = Math.min(1, P.laneT + rdt / LANE_TIME);
@@ -1274,7 +1295,7 @@ function frame() {
 
 // expose for automated tests
 window.__spawnObstacleAhead = (type = 'barrier', z = -6) => { const o = get(type); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return o; };
-window.__spawnRivalAhead = (z = -4) => { const o = get('rival'); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); };
+window.__spawnRivalAhead = (z = -4) => { const o = get("rival"); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return (window.__lastObs = o); };
 window.__cam = camera;
 window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
 
