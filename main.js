@@ -1029,7 +1029,7 @@ function ballStep(dt, lat, now) {
     if (gap > ROLL.gGap && now < G.t + 0.08) {} // not there yet
     else if ((G.done = true) && gap <= ROLL.gGap) {
       const a = ballDecel(S.speed), nz = -Math.min(3.5, Math.sqrt(2 * a * ROLL.ahead)), tr = 2 * -nz / a, nx = Math.max(-2, Math.min(2, -BS.p.x / tr));
-      BS.wx = nx + lat / dt; BS.vz = nz; BS.gstat.hit++; G.tHit = now; BS.gstat.gaps.push(+gap.toFixed(3));
+      BS.wx = nx + (SK.m ? lat / dt : 0); BS.vz = nz; BS.gstat.hit++; // after the move the body no longer moves sideways G.tHit = now; BS.gstat.gaps.push(+gap.toFixed(3));
       if (BS.rel && !BS.rel.lead) BS.rel.lead = { side: s, dt: +(S.t - BS.rel.t).toFixed(3), x: +(BS.p.x * BS.rel.d).toFixed(3), gap: +gap.toFixed(3) };
     } else { BS.gstat.miss++; BS.gstat.gaps.push(+G.best.toFixed(3)); }
   }
