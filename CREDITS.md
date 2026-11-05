@@ -22,8 +22,10 @@ All seven skill moves (Roulette, Ronaldo Chop, Elastico, Step-over/Half Scissor,
 
 The straight-line dribble is Anderson Rohr's Free Soccer Mocap Pack 05, retargeted onto this rig (`tools-mocap/retarget_rohr.py`) and shipped only as `assets/dribble.glb`. Take 01 is the base run (a close repeating dribble). Take 02 is a longer lunge and take 03 is a wide stance; both stay in the file as `?run=d2` and `?run=d3`. `?run=jog` is the stock Quaternius jog. `?run=proc` is the earlier procedural stride.
 
+Mixamo's Unarmed Run Forward, Sprint Forward, and Jog Forward (soccer), all in-place on the X Bot, were checked against that dribble and are not included. The run keeps Rohr's steps. A small accent holds the trunk near the soccer jog's lean and loads the plant knee; the feet stay on the clip. An added arm swing pitched the hands up on this rig, so the arms stay Rohr's. The sprint's deeper knee and heavier lean were not copied. Soccer Pass, Penalty Kick, Header, and Scissor Kick (a volley, not a step-over) do not replace the skill poses. Soccer Tackle is a slide; there is no standing tackle. The raw FBX files are not in the repo.
+
 Free motion sources reviewed (Nov 2026) and not used for the skill moves:
 - CMU Graphics Lab Motion Capture Database (free, no restrictions; http://mocap.cs.cmu.edu, BVH by cgspeed) — only soccer *kicks* (subjects 10/11), no dribbling skill moves.
 - Quaternius Universal Animation Library — no kick/soccer clips.
-- Mixamo — requires Adobe login (not usable headless); no recognized skill-move clips, and Adobe terms restrict redistribution of raw files.
+- Mixamo run, sprint, and soccer jog were a cross-check only (see above). Pass, penalty kick, header, and the scissor-kick volley were not used as skill poses. Raw files are not included. Adobe's terms restrict redistributing those FBX files.
 - Wikimedia Commons "Elastico soccer.theora.ogv" (public domain video) — reference only (video, not mocap).

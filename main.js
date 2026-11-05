@@ -1248,6 +1248,8 @@ function sampleBody(m, t, d) {
   }
   const flex = o.plant === 'l' ? (c.kneeL || 0) : (c.kneeR || 0);
   o.knee = Math.max(0, Math.min(1, flex / 1.05));
+  // Knee angle is the hip-to-foot distance. Pulling the foot in to match kneeL/kneeR moves the
+  // contact, and the gather assist climbs. The pin keeps the foot. o.knee stays the plant hint.
   const hit = contacts.find(x => x.role === 'hit') || contacts[contacts.length - 1];
   o.hold = hit ? (t < hit.t + 0.05 ? 1 : Math.max(0, 1 - (t - hit.t - 0.05) / 0.12)) : 0;
   // Leg channels are sampled either way. They are applied only when the curve file sets applyLegs,
@@ -1355,6 +1357,42 @@ function dribblePose(dt) {
     ikLeg(s, _tw[s], _tq[s], _hint[s]);
   }
 }
+// Rohr's dribble stays the run. Mixamo's unarmed run and soccer jog (not the sprint) are the check:
+// those hold about 11–18° of trunk lean, a swing knee near 90°, and arms that oppose the feet.
+// The retarget stands up between touches and the left knee stopped near 56°. Arms stay on the clip.
+function dribbleAccent() {
+  if (!mocapRunOn() || !hero || !hero.bones || !hero.bones.foot_l || !hero.bones.spine_02) return;
+  const skill = SK.m && SK.fade === 0 ? moveW(SK) : (SK.m ? 0.4 : 0);
+  if (S.state !== 'play' || !P.grounded || P.slideT > 0 || skill >= 0.2) return;
+  const b = hero.bones;
+  hero.group.updateMatrixWorld(true);
+  hero.group.getWorldQuaternion(_gq);
+  _fq.copy(_gq);
+  b.pelvis.getWorldPosition(_a);
+  b.neck_01.getWorldPosition(_b);
+  const up = _c.subVectors(_b, _a);
+  const lean = Math.acos(Math.max(-1, Math.min(1, up.normalize().dot(_w1.set(0, 1, 0)))));
+  const floor = 0.20; // ~11°, the soccer-jog floor. Do not stack this on a frame that is already there.
+  if (lean < floor) rotFrame(b.spine_02, -(floor - lean) * 0.9, 0, 0);
+  hero.group.updateMatrixWorld(true);
+  // The retarget keeps the left foot low, so pulling that foot would skate it. Drop the hips a few
+  // centimetres and put both feet back where the clip had them: the plant knee loads, the feet do not move.
+  const flexOf = (s) => {
+    b['thigh_' + s].getWorldPosition(_H); b['calf_' + s].getWorldPosition(_K); b['foot_' + s].getWorldPosition(_F);
+    const u = _c.subVectors(_H, _K), v = _d.subVectors(_F, _K);
+    return Math.PI - Math.acos(Math.max(-1, Math.min(1, u.dot(v) / (u.length() * v.length() || 1))));
+  };
+  if (Math.min(flexOf('l'), flexOf('r')) < 1.15) {
+    for (const s of SIDES) { b['foot_' + s].getWorldPosition(_tw[s]); b['foot_' + s].getWorldQuaternion(_tq[s]); }
+    const parent = b.pelvis.parent;
+    parent.getWorldQuaternion(_q1);
+    b.pelvis.position.add(_a.set(0, -0.03, 0).applyQuaternion(_q1.invert()));
+    hero.group.updateMatrixWorld(true);
+    for (const s of SIDES) { _hint[s].set(0, 0.35, -0.55).applyQuaternion(_gq); ikLeg(s, _tw[s], _tq[s], _hint[s]); }
+  }
+  // Arms stay on the Rohr clip. An added opposite swing on this rig pitches the hands up
+  // before the correlation flips, so the Mixamo arm check is not applied as a pose.
+}
 // Working-foot offset from the reference, in the group frame. 0 on the rollover sole so that pin stays authored.
 function driveWeight(m, d, side, t) {
   if (!m || !m.touches) return 0;
@@ -1415,6 +1453,10 @@ function calmRival(o) {
   const m = u.runner && u.runner.model;
   if (m && m !== u.runner.group) { m.rotation.x = 0; m.rotation.z = 0; m.position.set(0, 0, 0); }
 }
+// TODO(ball): Mixamo's only tackle is Soccer Tackle, a slide. Hips fall from about 0.97 m to 0.24 m
+// and the trunk folds past 70° while one leg stays long. There is no standing tackle in that pack.
+// This track still poses the rival as a whole-body lean. A trailing leg or a slide is the ball track's
+// call; the collider stays where it is.
 function poseRival(o, dt) {
   const u = o.userData, run = u.runner;
   if (!run || !run.bones || !run.model || run.model === run.group) return;
@@ -1593,6 +1635,7 @@ function applySkillPose(dt) {
     if (Math.abs(off) > 0.005) { _mp.x += off; hero.group.localToWorld(_mp); fo.getWorldQuaternion(_mq); _hint.l.set(0, 0.25, -1).applyQuaternion(_gq); ikLeg(best, _mp, _mq.clone(), _hint.l.clone()); }
   } else BS.reachW = 0;
   dribblePose(dt);
+  dribbleAccent();
   // ---- ball: authored contact (pinned to the real sole) + rolling physics everywhere else ----
   const dz = S.speed * dt, lat = dt > 0 ? P.x - BS.lastX : 0; if (dt > 0) BS.lastX = P.x; // (dt=0 frames: carry the lane shift to the next real step)
   const old = _np.copy(BS.p);
