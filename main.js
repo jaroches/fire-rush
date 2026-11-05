@@ -682,7 +682,7 @@ const STEPOVER_MC = { id: 'scissor', mc: true, name: 'STEP-OVER!', sub: 'BODY FE
   lane: [[0, 0], [0.29, -0.06], [0.4, 0.04], [0.47, 0.2], [0.55, 0.82], [0.6, 1]],
   drop: [[0, 0], [0.11, -0.06], [0.29, -0.16], [0.46, -0.1], [0.6, 0]],
   touches: [{ foot: 'r', surf: 'outside', t0: 0.4, t1: 0.47, ball: [[0.4, 0.04, -0.42], [0.47, 0.24, -0.5]], hit: 1 }],
-  own: 'l', feet: { l: { p: [[0, -0.12, A, 0.02], [0.09, 0.08, 0.4, -0.2], [0.155, 0.02, 0.44, -0.72], [0.22, -0.26, 0.34, -0.62], [0.29, -0.37, A, -0.3], [0.48, -0.35, A, -0.3], [0.6, -0.12, A, -0.12]] } }, bones: {} };
+  own: 'l', feet: { l: { p: [[0, -0.12, A, 0.02], [0.09, 0.08, 0.4, -0.2], [0.155, 0.02, 0.44, -0.72], [0.22, -0.26, 0.34, -0.62], [0.29, -0.37, A, -0.3], [0.48, -0.35, A, -0.3], [0.6, -0.12, A, -0.12]] } }, addLean: true, bones: { spine_02: [[[0, 0], [0.3, 0.4], [0.47, 0.4], [0.6, 0]], 0, 0] } }; // v18: ~7 deg more forward lean (reference)
 STEPOVER_MC.beat = STEPOVER_MC.beatT / STEPOVER_MC.T;
 const mcRollSide = (m, d) => { const f = (m.touches[0] && m.touches[0].foot) || 'l'; return d < 0 ? sw(f) : f; };
 const mcOwnSide = (m, d) => m.own ? (d < 0 ? sw(m.own) : m.own) : null;
@@ -711,14 +711,14 @@ let RAINBOW_MC = null;
 function rainbowMC() {
   if (RAINBOW_MC) return RAINBOW_MC; const base = MOVES.find(x => x.id === 'rainbow'); if (!base) return null;
   const m = JSON.parse(JSON.stringify(base, (k, v) => (k === '_t' || k === '_fk') ? undefined : v));
-  Object.assign(m, { mc: true, clip: 'Rainbow', F: RAINBOW_F, own: 'both', warp: [[0, 0], [m.T, 52]], bones: {} });
+  Object.assign(m, { mc: true, clip: 'Rainbow', F: RAINBOW_F, own: 'both', warp: [[0, 0], [m.T, 52]], addLean: true, bones: { spine_02: [[[0, 0], [0.4, 0.4], [0.68, 0.45], [0.9, 0.1], [1.05, 0]], 0, 0] } }); // v18: fold forward at the flick
   m.beat = m.beatT / m.T; return (RAINBOW_MC = m);
 }
 let HEEL_MC = null;
 function heelMC() {
   if (HEEL_MC) return HEEL_MC; const base = MOVES.find(x => x.id === 'heel'); if (!base) return null;
   const m = JSON.parse(JSON.stringify(base, (k, v) => (k === '_t' || k === '_fk') ? undefined : v));
-  Object.assign(m, { mc: true, clip: 'Heel', F: HEEL_F, own: 'both', warp: [[0, 0], [m.T, 20]], bones: {}, fwdAim: true });
+  Object.assign(m, { mc: true, clip: 'Heel', F: HEEL_F, own: 'both', warp: [[0, 0], [m.T, 20]], addLean: true, bones: { spine_02: [[[0, 0], [0.1, 0.4], [0.38, 0.4], [0.5, 0]], 0, 0] }, fwdAim: true }); // v18: more forward lean
   m.beat = m.beatT / m.T; return (HEEL_MC = m);
 }
 let CROQUETA_MC = null;
@@ -1162,7 +1162,7 @@ function applySkillPose(dt) {
       for (const sk of list) {
         const d = sk.d, t = Math.min(1, sk.t) * sk.m.T, w = moveW(sk);
         let src = n0; if (d < 0) src = n0.endsWith('_l') ? n0.slice(0, -2) + '_r' : n0.endsWith('_r') ? n0.slice(0, -2) + '_l' : n0;
-        if (sk.m.mc && !(sk.m.addArms && n0.startsWith('upperarm'))) continue; // mocap moves: captured upper body (+ optional arm widening)
+        if (sk.m.mc && !(sk.m.addArms && n0.startsWith('upperarm')) && !(sk.m.addLean && n0 === 'spine_02')) continue; // mocap moves: captured upper body (+ optional arm widening)
         const ch = sk.m.bones && sk.m.bones[src]; if (!ch) continue;
         const sx = n0.startsWith('upperarm') ? 0.4 : -1; // spine/neck authored + = bend forward / look down (bone frame is the opposite); arms damped
         const ua = n0.startsWith('upperarm'), ub = ua ? 1 : n0 === 'neck_01' ? 0.25 : 0.3; // rig is very responsive: keep torso/neck subtle
