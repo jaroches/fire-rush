@@ -508,8 +508,8 @@ const SKILL_BONUS = 150, DODGE_WIN = 7.5, COMBO_WIN = 3.2;
 // monotone cubic (Fritsch-Carlson) so lateral travel never stalls at a key, unlike the eased per-segment kf
 // body lateral progress: the move's lane curve, but never slower than needed to clear a threat that is already close
 // (late dodges: the body leaves the old lane by ~0.45 of the lane width before the obstacle arrives, no clipping through it)
-function laneProg(sk) {
-  const t = Math.min(1, sk.t) * sk.m.T, lp = laneAt(t, sk.m.lane);
+function laneProg(sk, tt) {
+  const t = tt !== undefined ? Math.min(sk.m.T, tt) : Math.min(1, sk.t) * sk.m.T, lp = laneAt(t, sk.m.lane);
   if (!sk.ev) return lp; const tg = t / (sk.rate || 1), u = Math.min(1, tg / sk.ev);
   return Math.max(lp, 0.55 * u * u * (3 - 2 * u));
 }
@@ -990,7 +990,7 @@ const _gp = new THREE.Vector3();
 function predictBall(tau, out) {
   const a = ballDecel(Math.hypot(BS.wx || 0, S.speed - (BS.vz || 0))), u = S.speed - (BS.vz || 0), sp = Math.hypot(BS.wx || 0, u) || 1;
   const k = Math.max(0, 1 - a * tau / sp * 0.5); // mean speed factor over tau
-  let px = P.x; if (SK.m && SK.m.lane && SK.fade === 0) { const T = SK.m.T, t = Math.min(T, Math.min(1, SK.t) * T + tau * (SK.rate || 1)); px = P.fromX + (P.toX - P.fromX) * laneAt(t, SK.m.lane); }
+  let px = P.x; if (SK.m && SK.m.lane && SK.fade === 0) { const T = SK.m.T, t = Math.min(T, Math.min(1, SK.t) * T + tau * (SK.rate || 1)); px = P.fromX + (P.toX - P.fromX) * laneProg(SK, t); }
   out.set(P.x + BS.p.x + (BS.wx || 0) * k * tau - px, BR, BS.p.z + (BS.vz || 0) * tau + 0.5 * a * (BS.wx ? 1 : 1) * tau * tau * (u / sp));
   return out;
 }
@@ -1164,8 +1164,10 @@ function applySkillPose(dt) {
       BS.vz = Math.max(-1.2, Math.min(0.2, BS.vz));
       // sideways: the capture's foot swing is far faster than the lane shift needs; the ball leaves at most ROLL.relX faster than the body
       if (SK.m && SK.m.mc) { // the touch aims the ball into the new lane: it arrives just ahead of where the body finishes
-        const lv = BS.latv || 0, d = Math.sign(P.toX - P.fromX) || 1, tRem = Math.max(0.12, (SK.m.T - Math.min(1, SK.t) * SK.m.T) / (SK.rate || 1) + 0.06);
-        BS.gT = tRem; BS.wx = lv + Math.max(-3, Math.min(3, (P.toX + d * ROLL.leadX - P.x - BS.p.x) / tRem - lv)); }
+        const lv = BS.latv || 0, d = Math.sign(P.toX - P.fromX) || 1, tNow = Math.min(1, SK.t) * SK.m.T; let tEnd = SK.m.T;
+        if (SK.ev) for (let x = tNow; x <= SK.m.T; x += 0.005) if (laneProg(SK, x) >= 0.97) { tEnd = x; break; } // late dodge: the body arrives early
+        const tRem = Math.max(0.12, (tEnd - tNow) / (SK.rate || 1) + 0.06);
+        BS.gT = tRem; const lo = SK.ev ? Math.max(3, Math.abs(lv)) : 3; BS.wx = lv + Math.max(-lo, Math.min(lo, (P.toX + d * ROLL.leadX - P.x - BS.p.x) / tRem - lv)); }
       if (SK.rel) { BS.rel = { t: S.t, x: +(BS.p.x * SK.rel).toFixed(3), wx: +(BS.wx * SK.rel).toFixed(2), vz: +BS.vz.toFixed(2), latv: +((BS.latv || 0) * SK.rel).toFixed(2), d: SK.rel }; SK.rel = 0; }
       BS.reach = true;
       if (SK.m && SK.m.mc || BS.rel && S.t - BS.rel.t < 0.01) BS.gather = { t0: S.t, t: S.t + Math.max(ROLL.gatherT, BS.gT || 0), side: null, done: false };
