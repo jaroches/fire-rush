@@ -681,6 +681,8 @@ const STEPOVER_MC = { id: 'scissor', mc: true, name: 'STEP-OVER!', sub: 'BODY FE
 STEPOVER_MC.beat = STEPOVER_MC.beatT / STEPOVER_MC.T;
 const mcRollSide = (m, d) => { const f = (m.touches[0] && m.touches[0].foot) || 'l'; return d < 0 ? sw(f) : f; };
 const mcOwnSide = (m, d) => m.own ? (d < 0 ? sw(m.own) : m.own) : null;
+// every ground move (mocap or keyframed fallback) uses the aimed release + physical gather; only the airborne rainbow keeps the v9 path
+const aimedMove = (m) => m.mc || m.id !== 'rainbow';
 const mcOwns = (m, d, side) => m.own === 'both' || side === mcOwnSide(m, d);
 // ROULETTE (mocap): Zaleto "The Spin Turn" slow-mo (youtube mVRrqneCapU, 9.3-13.8 s), capture frames 65..290 @50 fps -> 41 keys.
 // Capture (yaw removed) drives pelvis drop, trunk lean, wide arms and head; the 360 spin (CCW for d=+1), both sole drags and the
@@ -1055,7 +1057,7 @@ function footCollide(dt, latv) {
   for (const s of SIDES) {
     if (!_fcp[s]) continue; const pa = _fp[s][0], pt = _fp[s][1]; capsuleAt(s, pa, pt);
     // between a mocap move's release and its gather the ball runs between the legs: only the gathering foot may touch it
-    if (BS.gather && !BS.gather.done && (SK.m && SK.m.mc || s !== BS.gather.side)) { _fpv[s] = null; continue; }
+    if (BS.gather && !BS.gather.done && (SK.m && aimedMove(SK.m) || s !== BS.gather.side)) { _fpv[s] = null; continue; }
     const ab = _b.subVectors(pt, pa), u = Math.max(0, Math.min(1, _c.subVectors(BS.p, pa).dot(ab) / ab.lengthSq())), q = _d.copy(pa).addScaledVector(ab, u);
     const prev = _fpv[s], ptp = _fpt[s]; _fpv[s] = q.clone(); _fpt[s] = pt.clone(); if (!prev || !ptp || dt <= 0) continue;
     const regather = !SK.m && BS.vz > -0.3 && ptp.z > BS.p.z - BR && pt.z <= BS.p.z - BR && Math.abs(pt.x - BS.p.x) < BR + ROLL.rf + 0.12 && pt.y < 0.34;
@@ -1165,7 +1167,7 @@ function applySkillPose(dt) {
       const fo = b['foot_' + tc.side]; fo.getWorldPosition(_bw); fo.getWorldQuaternion(_q1); _q1.multiply(_q2.copy(FOOT_REL[tc.side]).invert());
       _bw.add(surfOff(tc.side, tc.surf, _c).applyQuaternion(_q1)); hero.group.worldToLocal(_bw); _bw.y = Math.max(BR, _bw.y);
       BS.p.copy(_bw); pinned = tc; phys = false;
-    } else if (t < last || !SK.m.mc) { freeBall(SK, t, BS.p); phys = false; } // skill moves keep their authored roll-out (v9 behaviour)
+    } else if (t < last || !aimedMove(SK.m)) { freeBall(SK, t, BS.p); phys = false; } // only the airborne rainbow keeps its authored flight
   }
   if (phys && dt > 0) {
     if (!BS.phys) { // release: take over the ball's actual velocity (sole velocity at release + the body's lane shift), world frame
@@ -1175,7 +1177,7 @@ function applySkillPose(dt) {
       // forward: the capture ran at ~3 m/s, the game at 13-30 m/s, so the sole's backward drag is clamped to keep the ball in front
       BS.vz = Math.max(-1.2, Math.min(0.2, BS.vz));
       // sideways: the capture's foot swing is far faster than the lane shift needs; the ball leaves at most ROLL.relX faster than the body
-      if (SK.m && SK.m.mc) { // the touch aims the ball into the new lane: it arrives just ahead of where the body finishes
+      if (SK.m && aimedMove(SK.m)) { // the touch aims the ball into the new lane: it arrives just ahead of where the body finishes
         const lv = BS.latv || 0, d = Math.sign(P.toX - P.fromX) || 1, tNow = Math.min(1, SK.t) * SK.m.T; let tEnd = SK.m.T;
         if (SK.ev) for (let x = tNow; x <= SK.m.T; x += 0.005) if (laneProg(SK, x) >= 0.97) { tEnd = x; break; } // late dodge: the body arrives early
         const tRem = Math.max(0.12, (tEnd - tNow) / (SK.rate || 1) + 0.06);
@@ -1183,12 +1185,12 @@ function applySkillPose(dt) {
          const lo = SK.ev ? Math.max(3, Math.abs(lv)) : 3; BS.wx = lv + Math.max(-lo, Math.min(lo, (P.toX + d * ROLL.leadX - P.x - BS.p.x) / tRem - lv)); }
       if (SK.rel) { BS.rel = { t: S.t, x: +(BS.p.x * SK.rel).toFixed(3), wx: +(BS.wx * SK.rel).toFixed(2), vz: +BS.vz.toFixed(2), latv: +((BS.latv || 0) * SK.rel).toFixed(2), d: SK.rel }; SK.rel = 0; }
       BS.reach = true;
-      if (SK.m && SK.m.mc || BS.rel && S.t - BS.rel.t < 0.01) BS.gather = { t0: S.t, t: S.t + Math.max(ROLL.gatherT, BS.gT || 0), side: null, done: false };
+      if (SK.m && aimedMove(SK.m) || BS.rel && S.t - BS.rel.t < 0.01) BS.gather = { t0: S.t, t: S.t + Math.max(ROLL.gatherT, BS.gT || 0), side: null, done: false };
     }
     ballRoll(dt, lat);
   }
   BS.phys = phys; BS.pin = pinned ? pinned.surf : phys ? BS.pin : null;
-  if (SK.m && SK.m.mc && pinned) SK.rel = SK.d;
+  if (SK.m && aimedMove(SK.m) && pinned) SK.rel = SK.d;
   if (dt > 0) { // ball velocity over a fixed 1/30 s time window (independent of frame rate / slow-mo stepping)
     const H = BS.hist || (BS.hist = []); H.push({ t: S.t, x: BS.p.x, z: BS.p.z, px: P.x }); while (H.length > 2 && H[1].t <= S.t - 1 / 30) H.shift();
     const tw = S.t - 1 / 30; BS.vp = null; let h = H[0];
@@ -1197,7 +1199,7 @@ function applySkillPose(dt) {
     if (ht > 1e-4 && ht < 0.2) { BS.v.set((BS.p.x - h.x) / ht, 0, (BS.p.z - h.z) / ht); BS.latv = (P.x - h.px) / ht; } else { BS.v.subVectors(BS.p, old).divideScalar(dt); BS.latv = lat / dt; } }
   // skill moves (not the roll-over): v9 lead into the new lane after the last touch; folded into the ball when physics takes over
   let lead = 0;
-  if (SK.m && !SK.m.mc && SK.fade === 0 && SK.m.lane && !pinned) {
+  if (SK.m && !aimedMove(SK.m) && SK.fade === 0 && SK.m.lane && !pinned) {
     const t = Math.min(1, SK.t) * SK.m.T, hit = (SK.m.touches || []).find(tc => tc.hit);
     if (hit && t > hit.t1) { const r = Math.min(1, (t - hit.t1) / 0.06); lead = (laneAt(t + 0.12, SK.m.lane) - laneAt(t, SK.m.lane)) * (P.toX - P.fromX) * r * r * (3 - 2 * r); }
   }
