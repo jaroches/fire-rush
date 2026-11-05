@@ -11,6 +11,10 @@ Fan-made game themed on Chicago Fire FC club colors. Not affiliated with or endo
 
 Kit (red shirt, white collar/sleeve trim, white "10", navy shorts, red/white socks, dark boots) is painted at runtime by a shader in main.js — no third-party art.
 
+Game audio (ball thud, dodge whoosh, rating stings, Fire) is synthesized in `main.js` with the Web Audio API. No samples, no third-party audio. A mute control is always available. Playback starts from the tap that begins a run, because iOS Safari will not start audio without a user gesture.
+
+Skill-body curves in `fc27-body.js` are a scaled reading of monocular pose estimates from public tutorial footage. They are not EA animation, not a player likeness, and no footage or club art is included. Low-confidence frames are dropped. The ball stays on the game's own contact solver.
+
 ## Skill-move animations (lane changes)
 
 All seven skill moves (Roulette, Ronaldo Chop, Elastico, Step-over/Half Scissor, La Croqueta, Rainbow Flick, Heel-to-Heel) are **hand-authored keyframes in main.js** (`MOVES`), layered over the CC0 Quaternius jog cycle at runtime. No third-party motion data is used.

@@ -5,14 +5,17 @@
 <meta name="theme-color" content="#c8102e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Fire Rush</title>
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css?v=19">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/jsm/"}}</script>
 </head><body>
 <canvas id="c"></canvas>
 <div id="hud" class="hidden">
   <div class="pill" id="hScore">0</div>
+  <div id="fireWrap" aria-hidden="true"><div id="fireFill"></div><span id="fireLbl">FIRE</span></div>
   <div class="pill ball" id="hBalls">⚽ 0</div>
   <div class="pill small" id="hDist">0 m</div>
+  <button id="muteBtn" type="button" aria-label="Mute">🔊</button>
 </div>
 <div id="loading" class="overlay">
   <canvas class="emblem" width="160" height="160"></canvas>
@@ -26,8 +29,8 @@
   <p class="sub">Chicago street-soccer endless runner</p></div>
   <div class="top" style="gap:12px">
   <button id="startBtn">TAP TO PLAY</button>
-  <p class="help mob">Every lane change is a skill move — roulette, elastico, chop…<br>◀ ▶ or swipe ← → lanes · ↑ JUMP · ↓ SLIDE<br>Skill past a defender for a NUTMEG bonus!</p>
-  <p class="help desk">← → / A D: lane change = random skill move · ↑ W Space jump · ↓ S slide<br>Skill past a defender right in front of you for a NUTMEG combo!</p>
+  <p class="help mob">Cut as he commits. LATE is brave, PERFECT is the touch.<br>◀ ▶ or swipe lanes · ↑ JUMP · ↓ SLIDE<br>Three PERFECTs light FIRE — score x2.</p>
+  <p class="help desk">← → / A D: plant and take the ball with you · ↑ W Space jump · ↓ S slide<br>PERFECT is the late touch. Three of them light FIRE (score x2).</p>
   <p class="best">Best: <b id="tBest">0</b></p>
   <p id="warn" class="warn hidden"></p></div>
 </div>
@@ -36,6 +39,7 @@
   <div class="cr"><button class="tb slide" data-a="down"><span>▼<br><small>SLIDE</small></span></button>
   <button class="tb jump" data-a="up"><span>▲<br><small>JUMP</small></span></button></div>
 </div>
+<div id="ack"></div>
 <div id="popup"></div>
 <div id="over" class="overlay hidden">
   <h2>TACKLED!</h2>
@@ -43,5 +47,5 @@
   <p class="best" id="oBest">Best: 0</p>
   <button id="againBtn">PLAY AGAIN</button>
 </div>
-<script type="module" src="main.js?v=18"></script>
+<script type="module" src="main.js?v=19"></script>
 </body></html>

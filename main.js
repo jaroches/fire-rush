@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { installBodyCurves, sampleMoveCurves } from './body-curves.js';
 
 // ---------- constants ----------
 const LANES = [-2.2, 0, 2.2];
@@ -398,8 +399,9 @@ function resetGame() {
   for (const o of obstacles) release(o); obstacles.length = 0;
   for (const b of balls) release(b); balls.length = 0;
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
-  Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, beaten: 0 });
-  SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SM.g = 1; SM.t = SM.delay = -1;
+  Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, bufferT: 0, beaten: 0, airHold: 0 });
+  SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SK.pending = null; SK.punch = null; SK.punched = false; SK.roll = 0; SK.fov = 0;
+  SM.g = 1; SM.t = SM.delay = -1; HS.n = 0; FIRE.n = 0; FIRE.on = false; FIRE.t = 0; ACK.t = 0; ACK.held = false; CAM.k = 0;
   hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.air = false; BS.vy = 0; BS.hist = null; _fcp.l = _fcp.r = null;
 }
 
@@ -412,7 +414,7 @@ function spawnRow(z) {
   for (let i = 0; i < n; i++) {
     const lane = lanes[i], type = types[(Math.random() * types.length) | 0];
     const o = get(type); o.position.set(LANES[lane], 0, z - (type === 'train' ? 6 : 0)); o.userData.lane = lane; o.userData.beaten = false;
-    if (type === 'rival') { const rr = o.userData.runner; rr.model.rotation.y = 0; rr.play(Math.random() < .5 ? 'Idle_Loop' : 'Dance_Loop', 0, 1); rr.mixer.setTime(Math.random()*2); }
+    if (type === 'rival') { const rr = o.userData.runner; calmRival(o); rr.model.rotation.y = 0; rr.play(Math.random() < .5 ? 'Idle_Loop' : 'Dance_Loop', 0, 1); rr.mixer.setTime(Math.random()*2); }
     obstacles.push(o); used.push(lane);
   }
   // balls: a trail in a free lane, or arcing over a barrier
@@ -422,18 +424,36 @@ function spawnRow(z) {
 }
 
 // ---------- input ----------
+// Latest directional request only. A swipe is acknowledged the same turn (DOM arrow + lane pip).
+// It is held, not dropped, while a skill is still on the ball or the rainbow is in the air; the lane
+// itself does not change until the current touch can finish, so the ball's trajectory stays put.
+const DIR_BUFFER = 0.18;
+const ACK = { t: 0, dir: 0, held: false };
+function acknowledge(a) {
+  ACK.dir = a === 'left' ? -1 : 1; ACK.t = 0.32; ACK.held = false;
+  const el = document.getElementById('ack');
+  if (!el) return;
+  el.textContent = a === 'left' ? '◀' : '▶';
+  el.style.left = a === 'left' ? '16%' : '84%';
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+}
 function act(a) {
   if (S.state === 'title') { if (a === 'tap' || a) startGame(); return; }
   if (S.state === 'over') return;
   if (S.state !== 'play') return;
-  P.buffer = a; P.bufferT = BUFFER_T; tryBuffered();
+  if (a === 'left' || a === 'right') acknowledge(a);
+  P.buffer = a; P.bufferT = (a === 'left' || a === 'right') ? DIR_BUFFER : BUFFER_T; tryBuffered();
 }
 function tryBuffered() {
   const a = P.buffer; if (!a) return;
   if (a === 'left' || a === 'right') {
     const nl = Math.max(0, Math.min(2, P.lane + (a === 'left' ? -1 : 1)));
-    // rainbow in the air: the swipe waits (buffered) until the ball is back on the grass, unless a rival forces the switch now
-    if (nl !== P.lane && BS.air && !threatAhead(P.lane)) return;
+    const locked = !!(SK.m && SK.fade === 0 && SK.t < 0.92);
+    // rainbow in the air: keep the swipe (and its acknowledgement) until the ball is back on the grass,
+    // unless a rival in this lane forces the switch now. Do not retarget the airborne ball.
+    if (nl !== P.lane && BS.air && !threatAhead(P.lane)) { ACK.held = true; return; }
+    if (nl !== P.lane && locked && !threatAhead(P.lane)) { ACK.held = true; return; }
+    ACK.held = false;
     if (nl !== P.lane) { const d = nl > P.lane ? 1 : -1; P.lane = nl; P.fromX = P.x; P.toX = LANES[nl]; P.laneT = 0; if (P.grounded && P.slideT <= 0 && !BS.air) startLaneMove(d); else SK.m = null; }
     P.buffer = null;
   } else if (a === 'up') {
@@ -461,6 +481,8 @@ canvas.addEventListener('touchmove', (e) => {
 }, { passive: true });
 canvas.addEventListener('touchend', () => { if (tStart && !tStart.done && S.state === 'title') startGame(); tStart = null; }, { passive: true });
 document.getElementById('startBtn').addEventListener('click', () => startGame());
+const muteBtn = document.getElementById('muteBtn');
+if (muteBtn) muteBtn.addEventListener('click', (e) => { e.stopPropagation(); AU.on = !AU.on; muteBtn.textContent = AU.on ? '\u{1F50A}' : '\u{1F507}'; if (AU.on) audioUnlock(); });
 document.getElementById('againBtn').addEventListener('click', () => startGame());
 document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
@@ -478,6 +500,8 @@ let popT = 0;
 function popup(txt, sub, bonus) {
   const p = document.getElementById('popup'); p.innerHTML = '<b></b>' + (sub ? '<small></small>' : '');
   p.firstChild.textContent = txt; if (sub) p.lastChild.textContent = sub; p.classList.toggle('bonus', !!bonus);
+  p.classList.remove('perfect', 'great', 'late', 'fire');
+  const k = String(txt || '').toLowerCase(); if (k === 'perfect' || k === 'great' || k === 'late' || k === 'fire') p.classList.add(k);
   p.classList.remove('on'); void p.offsetWidth; p.classList.add('on'); clearTimeout(popT); popT = setTimeout(() => p.classList.remove('on'), bonus ? 900 : 620);
 }
 
@@ -486,11 +510,13 @@ const $ = (id) => document.getElementById(id);
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function startGame() {
   if (S.state === 'loading') return;
+  audioUnlock();
   resetGame(); S.state = 'play'; show('title', false); show('over', false); show('hud', true); show('controls', showControls);
   hero.play('Jog_Fwd_Loop', 0.2, 1.25);
 }
 function gameOver() {
-  S.state = 'over'; SK.m = null; SK.prev = null; hero.model.rotation.y = Math.PI; hero.play("Death01", 0.08, 1.2); show("controls", false); hero.model.position.set(0, 0, 0); if (footBall) footBall.position.set(...B0);
+  S.state = 'over'; SK.m = null; SK.prev = null; SK.pending = null; SK.punch = null; P.buffer = null; HS.n = 0; FIRE.on = false; FIRE.n = 0; FIRE.t = 0; ACK.held = false;
+  hero.model.rotation.y = Math.PI; hero.play("Death01", 0.08, 1.2); show("controls", false); hero.model.position.set(0, 0, 0); if (footBall) footBall.position.set(...B0);
   if (S.score > S.best) { S.best = Math.floor(S.score); localStorage.setItem('fireRushBest', S.best); }
   $('oScore').textContent = Math.floor(S.score); $('oBalls').textContent = S.ballsN; $('oDist').textContent = Math.floor(S.dist) + 'm';
   $('oBest').textContent = 'Best: ' + S.best; $('tBest').textContent = S.best;
@@ -791,18 +817,22 @@ function retime(m, k) {
 }
 for (const m of [...MOVES, ROLLOVER]) { if (TREF[m.id]) retime(m, TREF[m.id] / m.T); m.beat = m.beatT / m.T; }
 const TTI_WIN = 0.7, DODGE_MIN = 1.2, DODGE_MAX = 10; // skill dodge trigger: time-to-impact < 0.7s (clamped 1.2..10m)
-// global slow-mo on the skill's key beat
-const SLOW = { scale: 0.32, easeIn: 0.07, hold: 0.3, fovKick: 7 };
+// Punchy slow-mo snapped onto the authored key touch. Real-time envelope ~160ms. One instance, no stacking.
+// Gameplay still steps on one clock (dt = rdt * SM.g); hit-stop holds that same clock for two frames.
+const SLOW = { scale: 0.36, easeIn: 0.03, hold: 0.08, easeOut: 0.05, fovKick: 2.2 };
 const SM = { g: 1, delay: -1, t: -1, n: 0 };
+const HS = { n: 0 };
 function triggerSlowMo(delay) { if (SM.delay >= 0 || SM.t >= 0) return; SM.delay = delay; SM.n++; }
 function updateSlowMo(rdt) {
   if (SM.delay >= 0) { SM.delay -= rdt * SM.g; if (SM.delay < 0) SM.t = 0; }
   if (SM.t >= 0) {
     SM.t += rdt;
-    if (SM.t < SLOW.easeIn) SM.g = 1 + (SLOW.scale - 1) * (SM.t / SLOW.easeIn);
-    else if (SM.t < SLOW.easeIn + SLOW.hold) SM.g = SLOW.scale;
-    else { SM.g = 1; SM.t = -1; SK.fov = Math.max(SK.fov, SLOW.fovKick); shake = Math.max(shake, 0.1); }
-  } else SM.g = 1;
+    const e = SLOW.easeIn, h = SLOW.hold, o = SLOW.easeOut;
+    if (SM.t < e) SM.g = 1 + (SLOW.scale - 1) * (SM.t / e);
+    else if (SM.t < e + h) SM.g = SLOW.scale;
+    else if (SM.t < e + h + o) SM.g = SLOW.scale + (1 - SLOW.scale) * ((SM.t - e - h) / o);
+    else { SM.g = 1; SM.t = -1; }
+  } else if (SM.delay < 0) SM.g = 1;
 }
 function threatAhead(leaveLane) {
   // nearest obstacle in the lane we're leaving, measured as time-to-impact
@@ -823,7 +853,7 @@ function startLaneMove(d) {
 }
 function startRoll(d, th) {
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
-  beginMove(); SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.ev = th && th.o ? Math.max(0.08, th.tti * 0.75) : 0; SK.rolls = (SK.rolls || 0) + 1;
+  beginMove(); SK.pending = null; SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.ev = th && th.o ? Math.max(0.08, th.tti * 0.75) : 0; SK.rolls = (SK.rolls || 0) + 1;
 }
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
 function pickMove() { let i; do { i = (Math.random() * MOVES.length) | 0; } while (i === SK.last && MOVES.length > 1); SK.last = i; return MOVES[i]; }
@@ -840,19 +870,21 @@ function startSkill(d, forced, th) {
   SK.lock = {}; SK.bz = Math.max(-0.4, Math.min(0.3, BS.p.z - B0[2])); SK.bx = Math.max(-0.2, Math.min(0.2, BS.p.x));
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
   beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1; SK.ev = 0;
-  if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); SK.ev = Math.max(0.08, th.tti * 0.75); } SK.fov = 3.5; shake = Math.max(shake, 0.08);
+  if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); SK.ev = Math.max(0.08, th.tti * 0.75); }
   SK.count[m.id] = (SK.count[m.id] || 0) + 1;
   puff();
-  // skill dodge: a rival close ahead in the lane we're leaving
+  // The dodge is earned at the key touch, not at the swipe. Beaten stays immediate so the collider
+  // guarantee does not change; points, the rating and the defender's whiff wait for contact.
   const o = th && th.o;
-  if (o) {
-    o.userData.beaten = true; const riv = o.userData.type === 'rival';
-    SK.combo = S.t - SK.comboT < COMBO_WIN ? SK.combo + 1 : 1; SK.comboT = S.t; P.beaten++;
-    const pts = SKILL_BONUS * SK.combo; S.score += pts;
-    popup(m.name, (riv ? 'NUTMEG +' : 'SKILL DODGE +') + pts + (SK.combo > 1 ? '  x' + SK.combo : ''), true);
-    // slow-mo lands on the key beat, or as we pass the obstacle if that comes first
-    triggerSlowMo(Math.max(0, Math.min(m.beat * m.T, th.tti) - SLOW.easeIn));
-  } else popup(m.name, m.sub);
+  SK.pending = null;
+  if (o && !o.userData.rated) {
+    o.userData.beaten = true;
+    const rate = rateOf(th.tti);
+    SK.pending = { o, tti: th.tti, rate, riv: o.userData.type === 'rival' };
+    if (SK.pending.riv) o.userData.react = { t: 0, rate, dir: d };
+    blip('whoosh');
+    triggerSlowMo(Math.max(0, Math.min(m.beatT || m.beat * m.T, th.tti) - SLOW.easeIn));
+  }
 }
 function cancelSkill() { if (SK.m && SK.fade === 0) { SK.fade = 1; if (P.laneT < 1) { P.fromX = P.x; P.laneT = 0; } } }
 const _q = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _fq = new THREE.Quaternion(), _e = new THREE.Euler(), _yq = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0);
@@ -964,7 +996,7 @@ function freeBall(sk, t, out) {
 }
 function moveW(sk) { const t = Math.min(1, sk.t) * sk.m.T, T = sk.m.T; const ro = sk.m.id === 'rollover'; let w = Math.min(1, t / (ro ? 0.02 : 0.06), (T - t) / (ro ? 0.07 : 0.1)); if (sk.fade > 0) w = Math.min(w, sk.fade); return Math.max(0, w); }
 function wrapPI(a) { return a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI; }
-function beginMove() { SK.bp0 = BS.p.clone(); SK.bv0 = BS.v.clone(); }
+function beginMove() { SK.bp0 = BS.p.clone(); SK.bv0 = BS.v.clone(); SK.punched = false; SK.punch = null; }
 function aimBone(bone, from, to) {
   if (from.lengthSq() < 1e-8 || to.lengthSq() < 1e-8) return;
   _q1.setFromUnitVectors(from.normalize(), to.normalize());
@@ -1139,6 +1171,212 @@ function footCollide(dt, latv) {
     BS.wx = nx + latv; BS.vz = nz; BS.hits = (BS.hits || 0) + 1;
   }
 }
+
+// ---------- whole-body drive ----------
+// Phase 0 = move start, 1 = authored key touch (beatT), 2 = move end.
+// Design targets from the FC 27 close-replay notes (ranges, not retargeted skeletons).
+// dip/explode metres, rotations radians, cam metres and vertical FOV degrees.
+// shoulder leads the feint; hipWind stays small so the pelvis redirects on the release.
+// knee is selective: step-over stays soft and upright, chop/roulette/heel load.
+// overMocap scales the accent when a clip already owns the torso. Rollover and rainbow
+// MediaPipe flex was rejected in that audit and is not used here.
+// cam tracks the root (P.x), never the spin bones. Dolly is modest so the feet and the
+// defender ahead both stay in frame.
+const BODY_REF = {
+  _default: {
+    dip: 0.04, explode: 0.02, hipWind: 0.06, hipStrike: -0.32, shoulder: 0.28, arm: 0.34,
+    headDown: 0.22, headOut: 0.28, knee: 0.55, feint: 1, overMocap: 0.55,
+    cam: { back: 4.2, height: 1.68, side: 0.5, fov: 58, lookY: 0.72, lookZ: 4.3 }
+  },
+  chop: { dip: 0.05, explode: 0.02, hipWind: 0.08, hipStrike: -0.46, shoulder: 0.36, arm: 0.4, headDown: 0.18, headOut: 0.32, knee: 0.95, feint: 1, overMocap: 0.62,
+    cam: { back: 4.05, height: 1.58, side: 0.62, fov: 56, lookY: 0.68, lookZ: 3.9 } },
+  elastico: { dip: 0.045, explode: 0.022, hipWind: 0.1, hipStrike: -0.42, shoulder: 0.34, arm: 0.36, headDown: 0.16, headOut: 0.3, knee: 0.72, feint: 1.1, overMocap: 0.6,
+    cam: { back: 4.1, height: 1.6, side: 0.58, fov: 57, lookY: 0.7, lookZ: 4.0 } },
+  scissor: { dip: 0.02, explode: 0.012, hipWind: 0.04, hipStrike: -0.2, shoulder: 0.3, arm: 0.26, headDown: 0.1, headOut: 0.22, knee: 0.18, feint: 1.15, overMocap: 0.5,
+    cam: { back: 4.3, height: 1.62, side: 0.38, fov: 58, lookY: 0.74, lookZ: 4.4 } },
+  roulette: { dip: 0.07, explode: 0.016, hipWind: 0.04, hipStrike: -0.1, shoulder: 0.16, arm: 0.18, headDown: 0.2, headOut: 0.26, knee: 0.95, feint: 0.4, overMocap: 0.32,
+    cam: { back: 4.35, height: 1.7, side: 0.28, fov: 60, lookY: 0.8, lookZ: 4.2 } },
+  croqueta: { dip: 0.035, explode: 0.016, hipWind: 0.05, hipStrike: -0.18, shoulder: 0.22, arm: 0.24, headDown: 0.12, headOut: 0.3, knee: 0.4, feint: 0.8, overMocap: 0.55,
+    cam: { back: 4.15, height: 1.6, side: 0.48, fov: 57, lookY: 0.7, lookZ: 4.1 } },
+  heel: { dip: 0.05, explode: 0.02, hipWind: 0.04, hipStrike: -0.12, shoulder: 0.16, arm: 0.3, headDown: 0.28, headOut: 0.2, knee: 0.8, feint: 0.45, overMocap: 0.55,
+    cam: { back: 4.15, height: 1.52, side: 0.42, fov: 57, lookY: 0.58, lookZ: 3.6 } },
+  rainbow: { dip: 0.06, explode: 0.055, hipWind: 0.04, hipStrike: -0.1, shoulder: 0.18, arm: 0.36, headDown: 0.2, headOut: 0.42, knee: 0.85, feint: 0.35, overMocap: 0.5,
+    cam: { back: 4.4, height: 1.82, side: 0.4, fov: 62, lookY: 0.98, lookZ: 3.6 } },
+  rollover: { dip: 0.03, explode: 0.01, hipWind: 0.03, hipStrike: -0.08, shoulder: 0.22, arm: 0.22, headDown: 0.08, headOut: 0.16, knee: 0.4, feint: 0.5, overMocap: 0.4,
+    cam: { back: 4.15, height: 1.58, side: 0.52, fov: 58, lookY: 0.66, lookZ: 4.0 } }
+};
+function bodyRef(m) {
+  const id = (m && m.id) || '_default';
+  BODY_REF._cache = BODY_REF._cache || {};
+  if (BODY_REF._cache[id]) return BODY_REF._cache[id];
+  const base = BODY_REF._default, over = BODY_REF[id] || {};
+  const cam = Object.assign({}, base.cam, over.cam || {});
+  return (BODY_REF._cache[id] = Object.assign({}, base, over, { cam }));
+}
+function bodyPhase(m, t) {
+  const beat = m.beatT > 0 ? m.beatT : m.T * 0.4;
+  if (t <= beat) return t / Math.max(1e-4, beat);
+  return 1 + (t - beat) / Math.max(0.05, m.T - beat);
+}
+const BODY_OUT = { com: 0, hip: 0, shoulder: 0, trunk: 0, neckPitch: 0, neckYaw: 0, armL: 0, armR: 0, knee: 0, hold: 0, plant: 'r', k: 1, ref: null, channels: null };
+function sampleBody(m, t, d) {
+  const ref = bodyRef(m), o = BODY_OUT;
+  o.ref = ref;
+  const contacts = [];
+  if (m.touches && m.touches.length) for (const tc of touchesOf(m, d)) contacts.push({ t: tc.t0, foot: tc.side, surf: tc.surf, role: tc.hit ? 'hit' : '' });
+  else if (m.beatT) contacts.push({ t: m.beatT, role: 'hit' });
+  const blend = (m.mc ? ref.overMocap : 1);
+  const c = sampleMoveCurves(m.id, t, m.T, contacts, d);
+  o.channels = c;
+  o.k = blend;
+  // Curves are the pose. A playing clip already carries a torso, so the accent is scaled; the file can set blend later via installBodyCurves.
+  const hipK = m.mc ? blend * 0.55 : 1;
+  o.com = (c.comY || 0) * (m.mc ? Math.min(1, blend + 0.2) : 1);
+  o.hip = (c.pelvisYaw || 0) * hipK;
+  o.shoulder = (c.shoulderYaw || 0) * blend;
+  o.trunk = (c.trunkPitch || 0) * blend;
+  o.neckPitch = (c.headPitch || 0) * blend;
+  o.neckYaw = (c.headYaw || 0) * blend;
+  o.armL = (c.armL || 0) * blend;
+  o.armR = (c.armR || 0) * blend;
+  o.plant = d > 0 ? 'r' : 'l';
+  if (m.touches && m.touches.length) {
+    const active = touchesOf(m, d).find(tc => tc.side && t >= tc.t0 - 0.1 && t <= tc.t1 + 0.02);
+    if (active && active.side) o.plant = active.side === 'l' ? 'r' : 'l';
+  }
+  const flex = o.plant === 'l' ? (c.kneeL || 0) : (c.kneeR || 0);
+  o.knee = Math.max(0, Math.min(1, flex / 1.05));
+  const hit = contacts.find(x => x.role === 'hit') || contacts[contacts.length - 1];
+  o.hold = hit ? (t < hit.t + 0.05 ? 1 : Math.max(0, 1 - (t - hit.t - 0.05) / 0.12)) : 0;
+  // Leg channels are sampled either way. They are applied only when the curve file sets applyLegs,
+  // because a hip drop under the contact solver sends the ball off the tuned path.
+  let onBall = false;
+  if (m.touches && m.touches.length) for (const tc of touchesOf(m, d)) if (t >= tc.t0 - 0.04 && t <= tc.t1 + 0.03) onBall = true;
+  // The pin owns the touching foot. Load the hips just before contact, redirect the pelvis after it,
+  // and keep the plant knee off the ball so the support foot can flex without kicking it.
+  const preLoad = hit && t >= hit.t - 0.14 && t < hit.t - 0.03;
+  const after = hit && t > hit.t + 0.02;
+  if (!c._applyLegs || onBall) { o.com = 0; o.hip = 0; o.knee = 0; }
+  else { if (!preLoad && !after) o.com = 0; if (!after) o.hip = 0; }
+  return o;
+}
+function applyBodyAccent(b, body) {
+  if (!body) return;
+  if (b.pelvis && Math.abs(body.hip) > 0.004) rotFrame(b.pelvis, 0, body.hip, 0);
+  if (b.spine_02 && (Math.abs(body.shoulder) > 0.004 || Math.abs(body.trunk) > 0.004)) rotFrame(b.spine_02, -(body.trunk || 0), body.shoulder, body.shoulder * 0.15);
+  if (b.neck_01) rotFrame(b.neck_01, body.neckPitch, body.neckYaw, 0);
+  if (b.Head) rotFrame(b.Head, body.neckPitch * 0.45, body.neckYaw * 0.35, 0);
+  if (b.upperarm_l && Math.abs(body.armL) > 0.004) rotFrame(b.upperarm_l, 0, 0, -body.armL);
+  if (b.upperarm_r && Math.abs(body.armR) > 0.004) rotFrame(b.upperarm_r, 0, 0, body.armR);
+  if (b.lowerarm_l) rotFrame(b.lowerarm_l, body.armL * 0.35, 0, 0);
+  if (b.lowerarm_r) rotFrame(b.lowerarm_r, body.armR * 0.35, 0, 0);
+}
+
+// Timing is seconds-to-threat at the swipe, so a faster run does not shrink the window into a distance.
+function rateOf(tti) { return tti < 0.20 ? 'LATE' : tti <= 0.38 ? 'PERFECT' : 'GREAT'; }
+const FIRE = { n: 0, on: false, t: 0, need: 3 };
+function addFire(rate) {
+  if (FIRE.on) return false;
+  FIRE.n = Math.min(FIRE.need, FIRE.n + (rate === 'PERFECT' ? 1 : rate === 'GREAT' ? 0.4 : 0.15));
+  if (FIRE.n >= FIRE.need - 1e-3) { FIRE.on = true; FIRE.t = 8; blip('fire'); return true; }
+  return false;
+}
+function onKeyTouch() {
+  puff(); burst(); blip('touch');
+  const pnd = SK.pending; SK.pending = null;
+  if (!REDUCED && pnd) SK.fov = Math.max(SK.fov, SLOW.fovKick);
+  if (!pnd || !pnd.o || pnd.o.userData.rated || S.state !== 'play') return;
+  pnd.o.userData.rated = true;
+  SK.combo = S.t - SK.comboT < COMBO_WIN ? SK.combo + 1 : 1; SK.comboT = S.t; P.beaten++;
+  const mult = pnd.rate === 'PERFECT' ? 1.6 : pnd.rate === 'GREAT' ? 1.15 : 0.85;
+  const pts = Math.round(SKILL_BONUS * mult) * SK.combo;
+  S.score += pts;
+  const sub = (pnd.riv ? 'NUTMEG' : 'DODGE') + ' +' + pts + (SK.combo > 1 ? '  x' + SK.combo : '');
+  const ignited = addFire(pnd.rate);
+  popup(ignited ? 'FIRE' : pnd.rate, ignited ? sub + '  x2' : sub, true);
+  blip(pnd.rate === 'PERFECT' ? 'perfect' : pnd.rate === 'GREAT' ? 'great' : 'late');
+  SK.lastRate = pnd.rate;
+}
+
+// Defender reaction is visual only: the group (the collider) does not move.
+const _fqR = new THREE.Quaternion();
+function calmRival(o) {
+  const u = o && o.userData; if (!u || u.type !== 'rival') return;
+  u.react = null; u.rated = false; u._lean = 0;
+  const m = u.runner && u.runner.model;
+  if (m && m !== u.runner.group) { m.rotation.x = 0; m.rotation.z = 0; m.position.set(0, 0, 0); }
+}
+function poseRival(o, dt) {
+  const u = o.userData, run = u.runner;
+  if (!run || !run.bones || !run.model || run.model === run.group) return;
+  const model = run.model, r = u.react;
+  if (!r) {
+    if (u._lean) { model.rotation.x = 0; model.rotation.z = 0; model.position.set(0, 0, 0); u._lean = 0; }
+    return;
+  }
+  r.t += dt; u._lean = 1;
+  const amp = r.rate === 'PERFECT' ? 1 : r.rate === 'LATE' ? 1.15 : 0.6;
+  const bite = Math.sin(Math.min(1, r.t / 0.22) * Math.PI);
+  const w = r.t < 0.2 ? r.t / 0.2 : Math.max(0, 1 - (r.t - 0.2) / 0.55);
+  model.rotation.x = (r.rate === 'LATE' ? 0.65 : 0.36) * amp * bite;
+  model.rotation.z = -r.dir * (r.rate === 'GREAT' ? 0.14 : 0.3) * amp * w;
+  model.position.z = 0.16 * amp * bite;
+  model.position.y = r.rate === 'LATE' ? -0.14 * bite : 0;
+  model.updateMatrixWorld(true);
+  _fqR.copy(_fq); model.getWorldQuaternion(_fq);
+  const sp = run.bones.spine_02, nk = run.bones.neck_01;
+  if (sp) rotFrame(sp, 0.22 * amp * w, r.dir * 0.32 * amp * w, 0);
+  if (nk) rotFrame(nk, -0.18 * w, -r.dir * 0.4 * amp * w, 0);
+  _fq.copy(_fqR);
+  if (r.t > 0.85) u.react = null;
+}
+
+// Original synthesis (no samples). Unlocked from the start gesture. Six voices. Mute is always available.
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const AU = { ctx: null, on: true, voices: 0, noise: null };
+function audioUnlock() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  if (!AU.ctx) AU.ctx = new AC();
+  if (AU.ctx.state === 'suspended') AU.ctx.resume();
+  if (!AU.bus) { AU.bus = AU.ctx.createGain(); AU.bus.gain.value = 0.9; AU.bus.connect(AU.ctx.destination); }
+}
+function audioBus() { audioUnlock(); return AU.bus || (AU.ctx && AU.ctx.destination); }
+function noiseBuf() {
+  if (AU.noise || !AU.ctx) return AU.noise;
+  const n = 22050, buf = AU.ctx.createBuffer(1, n, AU.ctx.sampleRate), d = buf.getChannelData(0);
+  let x = 0x1234567;
+  for (let i = 0; i < n; i++) { x = (x * 16807) % 2147483647; d[i] = x / 2147483647 * 2 - 1; }
+  return (AU.noise = buf);
+}
+function blip(kind) {
+  if (!AU.on || !AU.ctx || AU.voices >= 6) return;
+  const ctx = AU.ctx, t = ctx.currentTime, g = ctx.createGain();
+  g.connect(audioBus());
+  const env = (node, peak, dur) => { node.gain.setValueAtTime(0.0001, t); node.gain.exponentialRampToValueAtTime(peak, t + 0.012); node.gain.exponentialRampToValueAtTime(0.0001, t + dur); };
+  if (kind === 'touch') {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(62, t + 0.07);
+    env(g, 0.32, 0.09); o.connect(g); o.start(t); o.stop(t + 0.1);
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf(); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 380; bp.Q.value = 0.8;
+    const ng = ctx.createGain(); env(ng, 0.16, 0.045); src.connect(bp); bp.connect(ng); ng.connect(audioBus()); src.start(t); src.stop(t + 0.05);
+  } else if (kind === 'whoosh') {
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf(); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(520, t); bp.frequency.exponentialRampToValueAtTime(1600, t + 0.12); bp.Q.value = 0.6;
+    env(g, 0.11, 0.16); src.connect(bp); bp.connect(g); src.start(t); src.stop(t + 0.18);
+  } else if (kind === 'perfect' || kind === 'fire') {
+    const freqs = kind === 'fire' ? [196, 247, 294, 392] : [330, 415, 494];
+    freqs.forEach((f, i) => {
+      const o = ctx.createOscillator(), gg = ctx.createGain(); o.type = 'triangle'; o.frequency.value = f;
+      const tt = t + i * 0.028; gg.gain.setValueAtTime(0.0001, tt); gg.gain.exponentialRampToValueAtTime(kind === 'fire' ? 0.11 : 0.07, tt + 0.02); gg.gain.exponentialRampToValueAtTime(0.0001, tt + (kind === 'fire' ? 0.42 : 0.26));
+      o.connect(gg); gg.connect(audioBus()); o.start(tt); o.stop(tt + 0.48);
+    });
+  } else if (kind === 'great' || kind === 'late') {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = kind === 'great' ? 494 : 220;
+    env(g, 0.09, kind === 'great' ? 0.14 : 0.1); o.connect(g); o.start(t); o.stop(t + 0.16);
+  } else return;
+  AU.voices++; setTimeout(() => { AU.voices = Math.max(0, AU.voices - 1); }, 480);
+}
+
 function applySkillPose(dt) {
   const fb = footBall; if (!hero || !fb || !hero.bones.foot_l) return;
   if (!FOOT_REL.l) calibrateFeet();
@@ -1150,6 +1388,9 @@ function applySkillPose(dt) {
     let sp = bd.spin; if (sk.fade > 0) sp = wrapPI(sp) * sk.fade;
     spin += sp; ht += bd.drop * w; px += bd.px * w; pz += bd.pz * w;
   }
+  let bodyNow = null;
+  if (SK.m && SK.fade === 0) bodyNow = sampleBody(SK.m, Math.min(1, SK.t) * SK.m.T, SK.d);
+  if (bodyNow) ht += bodyNow.com;
   hero.model.rotation.y = Math.PI + spin; hero.model.position.set(px, ht, pz);
   hero.group.updateMatrixWorld(true);
   hero.group.getWorldQuaternion(_gq);
@@ -1171,6 +1412,7 @@ function applySkillPose(dt) {
       if (n0.startsWith('upperarm')) { const lim = list.some(sk => sk.m.addArms) ? 0.7 : 0.38; rz = Math.max(-lim, Math.min(lim, rz)); const lx = lim > 0.5 ? 0.45 : 0.15; rx = Math.max(-lx, Math.min(lx, rx)); }
       if (rx || ry || rz) rotFrame(b[n0], rx, ry, rz);
     }
+    if (bodyNow) applyBodyAccent(b, bodyNow);
     hero.group.updateMatrixWorld(true);
     // legs: jog pose -> (interrupted move) -> current move, solved with 2-bone IK
     for (const s of SIDES) {
@@ -1184,11 +1426,18 @@ function applySkillPose(dt) {
           if (mcGrounded(sk.m, sk.d, s, t)) { if (!L) sk.lock[s] = { x: _mp.x, px: P.x, z: _mp.z }; else { const lx = L.x - (P.x - L.px), cx = Math.max(_mp.x - 0.22, Math.min(_mp.x + 0.22, lx)), wxp = P.x + cx; if (L.w !== undefined && sk === SK) BS.slide = (BS.slide || 0) + Math.abs(wxp - L.w); L.w = wxp; _mp.x = cx; _mp.z = L.z; } }
           else sk.lock[s] = null;
         }
+        if (!sk.m.mc && bodyNow && sk === SK && sk.fade === 0 && s === bodyNow.plant && bodyNow.hold > 0.45) {
+          sk.lock = sk.lock || {};
+          const key = 'plant' + s, L = sk.lock[key];
+          if (!L) sk.lock[key] = { x: _mp.x, px: P.x };
+          else _mp.x = Math.max(_mp.x - 0.26, Math.min(_mp.x + 0.26, L.x - (P.x - L.px)));
+        }
         hero.group.localToWorld(_mp);
         footOri(sk.m, sk.d, s, t, _mq); _mq.premultiply(_gq).multiply(FOOT_REL[s]);
         _tw[s].lerp(_mp, w); _tq[s].slerp(_mq, w);
         footOri(sk.m, sk.d, s, t, _q3); _hint[s].lerp(_a.set(0, 0.2, -1).applyQuaternion(_q3).applyQuaternion(_gq), w);
       }
+      if (bodyNow && s === bodyNow.plant && bodyNow.knee > 0.02) _hint[s].addScaledVector(_a.set(0, -0.2, 0.12).applyQuaternion(_gq), bodyNow.knee);
       ikLeg(s, _tw[s], _tq[s], _hint[s]);
     }
   }
@@ -1280,23 +1529,47 @@ function initFX() {
   for (let i = 0; i < 7; i++) { const g = new THREE.Mesh(new THREE.SphereGeometry(0.15 * (1 - i * 0.1), 10, 8), new THREE.MeshBasicMaterial({ color: i < 2 ? 0xfff2b0 : 0xff6a3d, transparent: true, opacity: 0, depthWrite: false })); g.visible = false; scene.add(g); trail.push({ m: g, p: new THREE.Vector3() }); }
   const pg = new THREE.RingGeometry(0.1, 0.35, 20); pg.rotateX(-Math.PI / 2);
   puffM = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: 0xe8d9b5, transparent: true, opacity: 0, depthWrite: false })); scene.add(puffM);
+  pip = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.48, 4), new THREE.MeshBasicMaterial({ color: 0xffe26a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  pip.rotation.x = -Math.PI / 2; pip.rotation.z = Math.PI / 4; pip.visible = false; scene.add(pip);
+  const mg = new THREE.PlaneGeometry(0.16, 0.16); mg.rotateX(-Math.PI / 2);
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffe26a : 0xc8b48a, transparent: true, opacity: 0, depthWrite: false }));
+    m.visible = false; scene.add(m); motes.push({ m, life: 1, vx: 0, vz: 0 });
+  }
 }
-let puffM = null, puffT = 1;
+let puffM = null, puffT = 1, pip = null;
+const motes = [];
 function puff() { if (!puffM || !footBall) return; footBall.getWorldPosition(puffM.position); puffM.position.y = 0.03; puffT = 0; }
+function burst() {
+  if (!footBall || !motes.length) return;
+  footBall.getWorldPosition(_bp);
+  for (let i = 0; i < motes.length; i++) {
+    const q = motes[i], a = i / motes.length * Math.PI * 2;
+    q.m.visible = true; q.m.position.copy(_bp); q.m.position.y = 0.04; q.life = 0;
+    q.vx = Math.cos(a) * 1.3; q.vz = Math.sin(a) * 1.3;
+  }
+}
 const _bp = new THREE.Vector3();
 function updateFX(dt, dz) {
   if (!footBall || !trail.length) return;
   footBall.getWorldPosition(_bp);
-  const on = !!SK.m && SK.fade === 0 && SK.skill;
+  const on = FIRE.on || (!!SK.m && SK.fade === 0 && SK.skill);
   for (let i = trail.length - 1; i > 0; i--) { trail[i].p.copy(trail[i - 1].p); trail[i].p.z += dz; }
   trail[0].p.copy(_bp);
   for (let i = 0; i < trail.length; i++) { const t = trail[i]; t.m.visible = on && i > 0; t.m.position.copy(t.p); t.m.material.opacity = on ? 0.55 * (1 - i / trail.length) : 0; }
   if (puffT < 1) { puffT += dt / 0.35; puffM.position.z += dz; puffM.scale.setScalar(1 + puffT * 2.5); puffM.material.opacity = 0.7 * (1 - puffT); } else puffM.material.opacity = 0;
+  for (const q of motes) {
+    if (q.life >= 1) { q.m.visible = false; continue; }
+    q.life += dt / 0.22; q.m.position.x += q.vx * dt; q.m.position.z += q.vz * dt + dz; q.m.position.y = 0.04 + q.life * 0.22;
+    q.m.material.opacity = 0.65 * (1 - q.life); q.m.scale.setScalar(0.6 + q.life);
+  }
 }
 
 // ---------- loop ----------
 const clock = new THREE.Timer(); clock.connect?.(document);
 const camPos = new THREE.Vector3(0, 3.0, 5.0), camLook = new THREE.Vector3(0, 1.2, -6);
+const CAM = { k: 0, ref: null };
+const _skillPos = new THREE.Vector3(), _skillLook = new THREE.Vector3(), _lookB = new THREE.Vector3();
 let shake = 0;
 
 function resize() {
@@ -1310,9 +1583,19 @@ const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 function updatePlay(dt, rdt = dt) {
   S.t += dt;
   S.speed = Math.min(MAX_SPEED, S.speed + ACCEL * dt * (S.speed < 20 ? 1.4 : 0.8));
-  const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30);
+  const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30) * (FIRE.on ? 2 : 1);
+  if (FIRE.on) { FIRE.t -= dt; if (FIRE.t <= 0) { FIRE.on = false; FIRE.n = 0; } }
   // move clock first, so the body's lane position and the pose/ball solved this frame use the same move time
-  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt * (SK.rate || 1) / SK.m.T; if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; } } }
+  if (SK.m) {
+    if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; }
+    else {
+      const prevT = SK.t;
+      SK.t += dt * (SK.rate || 1) / SK.m.T;
+      const beat = SK.m.beatT || 0;
+      if (!SK.punched && prevT * SK.m.T < beat && Math.min(SK.t, 1) * SK.m.T >= beat) { SK.punch = SK.m; SK.punched = true; }
+      if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; }
+    }
+  }
   // lanes
   if (SK.m && SK.fade === 0 && SK.m.lane && P.laneT < 1) {
     // skill moves travel across THROUGH the move: lateral position follows the move's own lane curve
@@ -1326,11 +1609,20 @@ function updatePlay(dt, rdt = dt) {
   if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
   else P.sinceGround += dt;
   if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) hero.play('Jog_Fwd_Loop', 0.15, 1.1 + S.speed / 40); }
-  if (P.buffer) { if (!BS.air) P.bufferT -= rdt; if (P.bufferT <= 0) P.buffer = null; else tryBuffered(); }
+  if (P.buffer) {
+    const directional = P.buffer === 'left' || P.buffer === 'right';
+    const locked = directional && !!(SK.m && SK.fade === 0 && SK.t < 0.92);
+    const airborne = directional && !!BS.air;
+    if (airborne) { P.airHold = (P.airHold || 0) + rdt; if (P.airHold > 2.5) { P.buffer = null; ACK.held = false; P.airHold = 0; } }
+    else P.airHold = 0;
+    if (P.buffer && !airborne && !locked) P.bufferT -= rdt;
+    if (P.buffer && P.bufferT <= 0 && !airborne && !locked) { P.buffer = null; ACK.held = false; }
+    if (P.buffer) tryBuffered();
+  }
   if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = 1.1 + S.speed / 40;
   hero.group.position.set(P.x, P.y, 0);
   // lean into lane change
-  const lean = SK.m && SK.m.id === 'rollover' && SK.fade === 0 ? -SK.d * 0.24 * Math.sin(Math.PI * Math.min(1, SK.t)) : P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
+  const lean = SK.m && SK.m.id === 'rollover' && SK.fade === 0 ? -SK.d * 0.12 * Math.sin(Math.PI * Math.min(1, SK.t)) : P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
   hero.group.rotation.z += (lean - hero.group.rotation.z) * Math.min(1, dt * 20);
 
   // move world
@@ -1343,7 +1635,7 @@ function updatePlay(dt, rdt = dt) {
   for (let i = obstacles.length - 1; i >= 0; i--) {
     const o = obstacles[i], u = o.userData;
     o.position.z += dz + (u.type === 'train' ? S.speed * 0.25 * dt : 0);
-    if (u.type === 'rival') u.runner.update(dt);
+    if (u.type === 'rival') { u.runner.update(dt); poseRival(o, dt); }
     if (o.position.z > 12) { release(o); obstacles.splice(i, 1); continue; }
     const hw = u.type === 'train' ? 0.85 : u.type === 'rival' ? 0.3 : 0.8;
     if (Math.abs(o.position.x - hb.x) > hw + hb.w) continue;
@@ -1360,6 +1652,11 @@ function updatePlay(dt, rdt = dt) {
       S.ballsN++; S.score += 25; release(b); balls.splice(i, 1);
     }
   }
+  if (SK.punch && S.state === 'play') { SK.punch = null; onKeyTouch(); }
+  const fw = $('fireFill'), wrap = $('fireWrap');
+  if (fw) fw.style.width = (FIRE.on ? 100 : Math.max(0, Math.min(1, FIRE.n / FIRE.need)) * 100) + '%';
+  if (wrap) wrap.classList.toggle('on', !!FIRE.on);
+  if (typeof rim !== 'undefined') rim.intensity = FIRE.on ? 2.8 : 1.6;
   $('hScore').textContent = Math.floor(S.score); $('hBalls').textContent = '⚽ ' + S.ballsN; $('hDist').textContent = Math.floor(S.dist) + ' m';
 }
 
@@ -1368,7 +1665,7 @@ function frame() {
   clock.update(); let rdt = Math.min(clock.getDelta(), 1 / 20) * (window.__timeScale || 1);
   if (window.__manual) { rdt = window.__stepDt || 0; window.__stepDt = 0; } // test hook: deterministic stepping
   if (S.state === 'play') updateSlowMo(rdt); else { SM.g = 1; SM.t = SM.delay = -1; }
-  const dt = rdt * SM.g; // global game time scale (slow-mo)
+  const dt = rdt * SM.g; // one clock: hero, ball and the world share the slow-mo scale
   if (S.state === 'play') updatePlay(dt, rdt);
   if (S.state === 'over') { for (const o of obstacles) if (o.userData.type === 'rival') o.userData.runner.update(dt); }
   if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') applySkillPose(dt); }
@@ -1388,11 +1685,40 @@ function frame() {
     const tx = P.x * 0.6, ty = 2.9 + P.y * 0.45;
     camPos.x += (tx - camPos.x) * Math.min(1, dt * 7); camPos.y += (ty - camPos.y) * Math.min(1, dt * 5); camPos.z = 4.9;
     camera.position.copy(camPos);
-    if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - .5) * shake * .5; camera.position.y += (Math.random() - .5) * shake * .5; }
+    if (shake > 0) { shake -= dt; if (!REDUCED) { camera.position.x += (Math.random() - .5) * shake * .5; camera.position.y += (Math.random() - .5) * shake * .5; } }
     camLook.set(P.x * 0.8, 1.25 + P.y * 0.3, -7); camera.lookAt(camLook);
+    if (!window.__camLow) {
+      const want = S.state === 'play' && SK.m && SK.skill && SK.fade === 0 && !REDUCED ? 1 : 0;
+      if (want && SK.m) CAM.ref = bodyRef(SK.m).cam;
+      CAM.k += (want - CAM.k) * Math.min(1, Math.max(rdt, 0) * (want ? 7 : 3.2));
+      if (CAM.k > 0.004 && CAM.ref) {
+        const c = CAM.ref, u = CAM.k * CAM.k * (3 - 2 * CAM.k), side = -(SK.d || 1);
+        _skillPos.set(P.x + side * c.side, c.height + P.y * 0.35, c.back);
+        _skillLook.set(P.x + (SK.d || 1) * 0.22, c.lookY + P.y * 0.15, -c.lookZ);
+        camera.position.lerp(_skillPos, u);
+        _lookB.copy(camLook).lerp(_skillLook, u);
+        camera.lookAt(_lookB);
+        const baseFov = innerWidth / innerHeight < 0.75 ? 72 : 62;
+        camera.fov = baseFov + (SK.fov || 0) * (1 - u) + (c.fov - baseFov) * u;
+        camera.updateProjectionMatrix();
+      }
+      if (!REDUCED && Math.abs(SK.roll || 0) > 0.0004) { camera.rotateZ(SK.roll); SK.roll *= Math.exp(-Math.max(rdt, 0) * 8); }
+      else SK.roll = 0;
+    }
     if (window.__camLow) { camera.position.set(P.x + 1.1, 0.95, 3.1); camera.lookAt(P.x - 0.1, 0.62, -0.6); } // test/render hook only (game camera unchanged)
   }
   if (S.state !== 'title') faceL.intensity = 0;
+  if (ACK.t > 0) ACK.t = Math.max(0, ACK.t - rdt);
+  if (pip) {
+    const queued = (P.buffer === 'left' || P.buffer === 'right') && ACK.held && S.state === 'play';
+    const show = S.state === 'play' && (queued || ACK.t > 0);
+    pip.visible = show;
+    if (show) {
+      const lane = queued ? Math.max(0, Math.min(2, P.lane + (P.buffer === 'left' ? -1 : 1))) : P.lane;
+      pip.position.set(LANES[lane], 0.045, -1.4);
+      pip.material.opacity = queued ? 0.45 + 0.4 * Math.abs(Math.sin(S.t * 14)) : Math.min(1, ACK.t / 0.1) * 0.8;
+    }
+  }
   sunL.position.set(P.x - 6, 14, -6); sunL.target.position.set(P.x, 0, -4);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -1400,9 +1726,15 @@ function frame() {
 
 // expose for automated tests
 window.__spawnObstacleAhead = (type = 'barrier', z = -6) => { const o = get(type); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return o; };
-window.__spawnRivalAhead = (z = -4) => { const o = get("rival"); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return (window.__lastObs = o); };
+window.__spawnRivalAhead = (z = -4) => { const o = get("rival"); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; calmRival(o); obstacles.push(o); return (window.__lastObs = o); };
 window.__cam = camera;
 window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
+window.__fireRush.BODY_REF = BODY_REF;
+window.__fireRush.FIRE = FIRE;
+window.__fireRush.rateOf = rateOf;
+window.__fireRush.AU = AU;
+window.__fireRush.installBodyCurves = installBodyCurves;
+window.__fireRush.sampleMoveCurves = sampleMoveCurves;
 
 (async () => {
   await loadAssets();
