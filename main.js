@@ -701,7 +701,7 @@ let HEEL_MC = null;
 function heelMC() {
   if (HEEL_MC) return HEEL_MC; const base = MOVES.find(x => x.id === 'heel'); if (!base) return null;
   const m = JSON.parse(JSON.stringify(base, (k, v) => (k === '_t' || k === '_fk') ? undefined : v));
-  Object.assign(m, { mc: true, clip: 'Heel', F: HEEL_F, own: 'both', warp: [[0, 0], [m.T, 20]], bones: {} });
+  Object.assign(m, { mc: true, clip: 'Heel', F: HEEL_F, own: 'both', warp: [[0, 0], [m.T, 20]], bones: {}, fwdAim: true });
   m.beat = m.beatT / m.T; return (HEEL_MC = m);
 }
 let CROQUETA_MC = null;
@@ -1179,7 +1179,8 @@ function applySkillPose(dt) {
         const lv = BS.latv || 0, d = Math.sign(P.toX - P.fromX) || 1, tNow = Math.min(1, SK.t) * SK.m.T; let tEnd = SK.m.T;
         if (SK.ev) for (let x = tNow; x <= SK.m.T; x += 0.005) if (laneProg(SK, x) >= 0.97) { tEnd = x; break; } // late dodge: the body arrives early
         const tRem = Math.max(0.12, (tEnd - tNow) / (SK.rate || 1) + 0.06);
-        BS.gT = tRem; const lo = SK.ev ? Math.max(3, Math.abs(lv)) : 3; BS.wx = lv + Math.max(-lo, Math.min(lo, (P.toX + d * ROLL.leadX - P.x - BS.p.x) / tRem - lv)); }
+        BS.gT = tRem; if (SK.m.fwdAim) BS.vz = Math.max(-1.6, Math.min(0.2, (B0[2] + 0.05 - BS.p.z) / tRem)); // back-heeled ball: roll it out in front for the gather
+         const lo = SK.ev ? Math.max(3, Math.abs(lv)) : 3; BS.wx = lv + Math.max(-lo, Math.min(lo, (P.toX + d * ROLL.leadX - P.x - BS.p.x) / tRem - lv)); }
       if (SK.rel) { BS.rel = { t: S.t, x: +(BS.p.x * SK.rel).toFixed(3), wx: +(BS.wx * SK.rel).toFixed(2), vz: +BS.vz.toFixed(2), latv: +((BS.latv || 0) * SK.rel).toFixed(2), d: SK.rel }; SK.rel = 0; }
       BS.reach = true;
       if (SK.m && SK.m.mc || BS.rel && S.t - BS.rel.t < 0.01) BS.gather = { t0: S.t, t: S.t + Math.max(ROLL.gatherT, BS.gT || 0), side: null, done: false };
