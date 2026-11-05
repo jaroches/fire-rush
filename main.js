@@ -813,17 +813,19 @@ function threatAhead(leaveLane) {
   return best;
 }
 function startLaneMove(d) {
-  const th = threatAhead(P.lane - d) || (window.__forceMove ? { o: null, tti: 0.25 } : null);
-  if (th) startSkill(d, window.__forceMove, th); else startRoll(d);
+  const fm = window.__forceMove, real = threatAhead(P.lane - d);
+  if (fm === 'rollover') return startRoll(d, real);
+  const th = real || (fm ? { o: null, tti: 0.25 } : null);
+  if (th) startSkill(d, fm, th); else startRoll(d, real);
 }
-function startRoll(d) {
+function startRoll(d, th) {
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
-  beginMove(); SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.ev = 0; SK.rolls = (SK.rolls || 0) + 1;
+  beginMove(); SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.ev = th && th.o ? Math.max(0.08, th.tti * 0.75) : 0; SK.rolls = (SK.rolls || 0) + 1;
 }
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
 function pickMove() { let i; do { i = (Math.random() * MOVES.length) | 0; } while (i === SK.last && MOVES.length > 1); SK.last = i; return MOVES[i]; }
 function startSkill(d, forced, th) {
-  let m = forced ? MOVES.find(x => x.id === forced) : pickMove();
+  let m = (forced && MOVES.find(x => x.id === forced)) || pickMove();
   if (m && m.id === 'chop' && mocapOn('Chop')) m = CHOP_MC;
   if (m && m.id === 'scissor' && mocapOn('Stepover')) m = STEPOVER_MC;
   if (m && m.id === 'roulette' && mocapOn('Roulette')) m = rouletteMC() || m;
