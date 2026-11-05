@@ -432,6 +432,8 @@ function tryBuffered() {
   const a = P.buffer; if (!a) return;
   if (a === 'left' || a === 'right') {
     const nl = Math.max(0, Math.min(2, P.lane + (a === 'left' ? -1 : 1)));
+    // rainbow in the air: the swipe waits (buffered) until the ball is back on the grass, unless a rival forces the switch now
+    if (nl !== P.lane && BS.air && !threatAhead(P.lane)) return;
     if (nl !== P.lane) { const d = nl > P.lane ? 1 : -1; P.lane = nl; P.fromX = P.x; P.toX = LANES[nl]; P.laneT = 0; if (P.grounded && P.slideT <= 0 && !BS.air) startLaneMove(d); else SK.m = null; }
     P.buffer = null;
   } else if (a === 'up') {
@@ -1014,7 +1016,7 @@ function driveMocap() {
 // a = ROLL.a0 + ROLL.cd * v^2  (a0 = 0.8 m/s^2 ~ mu_r 0.08 on short grass; cd = rho*Cd*A/(2m) = 1.2*0.25*0.038/(2*0.43) = 0.0133 /m)
 const ROLL = { a0: 0.8, cd: 0.0133, rf: 0.045, e: 0.35, ahead: 0.25, gatherT: 0.15, leadX: 0.1, gGap: 0.09 };
 // flight (rainbow): gravity, quadratic air drag (same cd), Magnus from the flick's topspin (kM = rho*A*r*Cl/(m*w*r) ~ 0.0025 s), grass bounce
-const AIR = { g: 9.81, kM: 0.0025, e: 0.35, fr: 0.12, settle: 0.7, peak: 2.05, zLand: -1.25, spin: -18 };
+const AIR = { g: 9.81, kM: 0.0025, e: 0.35, fr: 0.12, settle: 0.7, peak: 2.05, zLand: -1.55, spin: -18 };
 // one airborne / bouncing step of the ball (G frame of the runner, which moves forward at S.speed and sideways by lat)
 function airStep(st, dt, speed) {
   const uf = speed - st.vz, v = Math.hypot(st.wx, uf, st.vy), c = ROLL.cd * v;
@@ -1323,7 +1325,7 @@ function updatePlay(dt, rdt = dt) {
   if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
   else P.sinceGround += dt;
   if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) hero.play('Jog_Fwd_Loop', 0.15, 1.1 + S.speed / 40); }
-  if (P.buffer) { P.bufferT -= rdt; if (P.bufferT <= 0) P.buffer = null; else tryBuffered(); }
+  if (P.buffer) { if (!BS.air) P.bufferT -= rdt; if (P.bufferT <= 0) P.buffer = null; else tryBuffered(); }
   if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = 1.1 + S.speed / 40;
   hero.group.position.set(P.x, P.y, 0);
   // lean into lane change
