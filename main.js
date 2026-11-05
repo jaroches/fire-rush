@@ -187,8 +187,8 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair, roll, chopC, stepC, roulC, elaC, croC, heelC, rbC] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=11').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/chop.glb?v=11').catch(() => null), loadGLB('assets/stepover.glb?v=12').catch(() => null), loadGLB('assets/roulette.glb?v=13').catch(() => null), loadGLB('assets/elastico.glb?v=14').catch(() => null), loadGLB('assets/croqueta.glb?v=15').catch(() => null), loadGLB('assets/heel.glb?v=16').catch(() => null), loadGLB('assets/rainbow.glb?v=17').catch(() => null)]);
-    if (roll) anims.animations.push(...roll.animations); if (chopC) anims.animations.push(...chopC.animations); if (stepC) anims.animations.push(...stepC.animations); if (roulC) anims.animations.push(...roulC.animations); if (elaC) anims.animations.push(...elaC.animations); if (croC) anims.animations.push(...croC.animations); if (heelC) anims.animations.push(...heelC.animations); if (rbC) anims.animations.push(...rbC.animations);
+    const [hero, anims, hair, roll, chopC, stepC, roulC, elaC, croC, heelC, rbC, dribC] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=11').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/chop.glb?v=11').catch(() => null), loadGLB('assets/stepover.glb?v=12').catch(() => null), loadGLB('assets/roulette.glb?v=13').catch(() => null), loadGLB('assets/elastico.glb?v=14').catch(() => null), loadGLB('assets/croqueta.glb?v=15').catch(() => null), loadGLB('assets/heel.glb?v=16').catch(() => null), loadGLB('assets/rainbow.glb?v=17').catch(() => null), loadGLB('assets/dribble.glb?v=20').catch(e => { console.warn('dribble clip missing', e); return null; })]);
+    if (roll) anims.animations.push(...roll.animations); if (chopC) anims.animations.push(...chopC.animations); if (stepC) anims.animations.push(...stepC.animations); if (roulC) anims.animations.push(...roulC.animations); if (elaC) anims.animations.push(...elaC.animations); if (croC) anims.animations.push(...croC.animations); if (heelC) anims.animations.push(...heelC.animations); if (rbC) anims.animations.push(...rbC.animations); if (dribC) anims.animations.push(...dribC.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
     let head = null; root.traverse(o => { if (o.isBone && o.name === 'Head') head = o; });
@@ -512,7 +512,7 @@ function startGame() {
   if (S.state === 'loading') return;
   audioUnlock();
   resetGame(); S.state = 'play'; show('title', false); show('over', false); show('hud', true); show('controls', showControls);
-  hero.play('Jog_Fwd_Loop', 0.2, 1.25);
+  playRun(0.2);
 }
 function gameOver() {
   S.state = 'over'; SK.m = null; SK.prev = null; SK.pending = null; SK.punch = null; P.buffer = null; HS.n = 0; FIRE.on = false; FIRE.n = 0; FIRE.t = 0; ACK.held = false;
@@ -1262,13 +1262,40 @@ function sampleBody(m, t, d) {
   else { if (!preLoad && !after) o.com = 0; if (!after) o.hip = 0; }
   return o;
 }
-// Dribble run. The jog clip is only a base; this pose replaces it whenever a skill isn't on the ball.
-// Stride phase advances with distance travelled, so a planted foot moves back at exactly ground speed (no skate).
-// ?run=jog keeps the untouched clip, for the before/after reel.
-const DRIBBLE_RUN = !/[?&]run=jog/.test(location.search);
+// Dribble run.
+// Default is the retargeted Anderson Rohr clip (assets/dribble.glb). The procedural stride
+// stays available as ?run=proc, and the stock jog as ?run=jog, for the before reel.
+// ?run=d1 / d2 / d3 pick which retargeted take plays. d1 is the base run.
+function runMode() {
+  const m = /[?&]run=([a-z0-9]+)/.exec(location.search);
+  return m ? m[1] : 'mocap';
+}
+function runClipName() {
+  const m = runMode();
+  if (m === 'd2') return 'Dribble_02';
+  if (m === 'd3') return 'Dribble_03';
+  // Take 01 is the base run: a repeating close dribble. 02 lunges, 03 is a wide stance.
+  if (m === 'd1' || m === 'mocap') return 'Dribble_01';
+  return 'Jog_Fwd_Loop';
+}
+function mocapRunOn() {
+  const n = runClipName();
+  return n.indexOf('Dribble_') === 0 && !!(hero && hero.actions && hero.actions[n]);
+}
+function runTimeScale() {
+  if (!mocapRunOn()) return 1.1 + S.speed / 40;
+  // The optical dribble is real-time, about 1 m/s of travel. Playing it at game speed
+  // (13 m/s and up) would buzz the legs, and a stride that long cannot reach the hips.
+  // A small speed-up keeps the cadence human while the pitch scrolls.
+  return Math.min(1.45, 1.0 + S.speed / 90);
+}
+function playRun(fade) {
+  hero.play(mocapRunOn() ? runClipName() : 'Jog_Fwd_Loop', fade, runTimeScale());
+}
 const DR = { w: 0, phase: 0, count: 0, len: 1.2, touch: false };
 function dribblePose(dt) {
-  if (!DRIBBLE_RUN || !hero || !hero.bones || !hero.bones.foot_l || !FOOT_REL.l) return;
+  // Procedural stride only for ?run=proc, or when the mocap clip failed to load.
+  if (runMode() === 'jog' || mocapRunOn() || !hero || !hero.bones || !hero.bones.foot_l || !FOOT_REL.l) return;
   const skill = SK.m && SK.fade === 0 ? moveW(SK) : (SK.m ? 0.4 : 0);
   const want = S.state === 'play' && P.grounded && P.slideT <= 0 && skill < 0.2 ? 1 : 0;
   DR.w += (want - DR.w) * Math.min(1, Math.max(dt, 0) * 12);
@@ -1556,7 +1583,9 @@ function applySkillPose(dt) {
       _hint.r.set(0, 0.25, -1).applyQuaternion(_gq); ikLeg(G.side, _mp, _mq.clone(), _hint.r.clone());
     }
   } }
-  if (!list.length && !BS.gather && (BS.reach || Math.abs(BS.p.x) > 0.1) && hero.bones.foot_l) {
+  // The mocap dribble owns the feet. This sideways reach was for the jog, and it pulls a planted leg off the clip.
+  // TODO(ball): Rohr's feet don't push ROLL.ahead on the jog cadence, so a straight run leans on the safety net. A dribble-pocket gather belongs on the ball track.
+  if (!mocapRunOn() && !list.length && !BS.gather && (BS.reach || Math.abs(BS.p.x) > 0.1) && hero.bones.foot_l) {
     BS.reachW = Math.min(1, (BS.reachW || 0) + dt / 0.1);
     let best = null, bd = 9; for (const s of SIDES) { b['foot_' + s].getWorldPosition(_a); hero.group.worldToLocal(_a); const dd = Math.abs(_a.x - BS.p.x); if (dd < bd) { bd = dd; best = s; } }
     BS.reachSide = best; const fo = b['foot_' + best]; fo.getWorldPosition(_mp); hero.group.worldToLocal(_mp);
@@ -1708,9 +1737,9 @@ function updatePlay(dt, rdt = dt) {
     P.x = P.fromX + (P.toX - P.fromX) * easeOut(P.laneT);
   }
   // vertical
-  if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
+  if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') playRun(0.12); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
   else P.sinceGround += dt;
-  if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) hero.play('Jog_Fwd_Loop', 0.15, 1.1 + S.speed / 40); }
+  if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) playRun(0.15); }
   if (P.buffer) {
     const directional = P.buffer === 'left' || P.buffer === 'right';
     const locked = directional && !!(SK.m && SK.fade === 0 && SK.t < 0.92);
@@ -1721,7 +1750,7 @@ function updatePlay(dt, rdt = dt) {
     if (P.buffer && P.bufferT <= 0 && !airborne && !locked) { P.buffer = null; ACK.held = false; }
     if (P.buffer) tryBuffered();
   }
-  if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = 1.1 + S.speed / 40;
+  if (hero.currentName === 'Jog_Fwd_Loop' || (hero.currentName && hero.currentName.indexOf('Dribble_') === 0)) hero.current.timeScale = runTimeScale();
   hero.group.position.set(P.x, P.y, 0);
   // lean into lane change
   const lean = SK.m && SK.m.id === 'rollover' && SK.fade === 0 ? -SK.d * 0.12 * Math.sin(Math.PI * Math.min(1, SK.t)) : P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
