@@ -1518,7 +1518,11 @@ function applySkillPose(dt) {
           const fw = driveWeight(sk.m, sk.d, s, t);
           const fp = s === 'l' ? bodyNow.footL : bodyNow.footR;
           if (fw > 0.02 && fp && fp.x !== undefined) {
-            _mp.x += fp.x * fw; _mp.y = Math.max(A - 0.02, _mp.y + (fp.y || 0) * fw); _mp.z += (fp.z || 0) * fw;
+            // Pull toward the curve pose, not just add it on top of an authored swing that goes the other way.
+            const curveX = (s === 'l' ? -0.1 : 0.1) + fp.x, curveZ = -0.32 + (fp.z || 0);
+            _mp.x += (curveX - _mp.x) * fw * 0.8;
+            _mp.z += (curveZ - _mp.z) * fw * 0.65;
+            _mp.y = Math.max(A - 0.02, _mp.y + (fp.y || 0) * fw);
           }
         }
         hero.group.localToWorld(_mp);
