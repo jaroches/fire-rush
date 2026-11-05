@@ -703,8 +703,8 @@ function rouletteMC() {
   if (ROULETTE_MC) return ROULETTE_MC; const base = MOVES.find(x => x.id === 'roulette'); if (!base) return null;
   const m = JSON.parse(JSON.stringify(base, (k, v) => (k === '_t' || k === '_fk') ? undefined : v));
   // spec.md: arms wide (upper arms ~60° abduction) -> added on top of the captured arms
-  const T8 = m.T / 0.85, arm = (v) => [0, 0, [[0, 0], [0.12 * T8, v], [0.66 * T8, v], [m.T, 0]]];
-  Object.assign(m, { mc: true, clip: 'Roulette', F: ROULETTE_F, own: 'both', warp: [[0, 0], [m.T, 40]], addArms: true, bones: { upperarm_r: arm(1.6), upperarm_l: arm(-1.6) },
+  const T8 = m.T / 0.85, arm = (v) => [[[0, 0], [0.12 * T8, v], [0.66 * T8, v], [m.T, 0]], 0, 0];
+  Object.assign(m, { mc: true, clip: 'Roulette', F: ROULETTE_F, own: 'both', warp: [[0, 0], [m.T, 40]], addArms: true, bones: { upperarm_r: arm(-0.4), upperarm_l: arm(0.4) },
     lane: [[0, 0], [0.12 * m.T / 0.8, 0.04], [0.3 * m.T / 0.8, 0.4], [0.42 * m.T / 0.8, 0.66], [0.6 * m.T / 0.8, 0.93], [m.T, 1]] });
   m.beat = m.beatT / m.T; return (ROULETTE_MC = m);
 }
@@ -1084,7 +1084,7 @@ function applySkillPose(dt) {
         const ua = n0.startsWith('upperarm'), ub = ua ? 1 : n0 === 'neck_01' ? 0.25 : 0.3; // rig is very responsive: keep torso/neck subtle
         rx += kf(t, ch[0]) * w * (ua ? 1 : sx * ub); ry += d * kf(t, ch[1]) * w * ub; rz += d * kf(t, ch[2]) * w * (ua ? sx : ub);
       }
-      if (n0.startsWith('upperarm')) { const lim = list.some(sk => sk.m.addArms) ? 0.7 : 0.38; rz = Math.max(-lim, Math.min(lim, rz)); rx = Math.max(-0.15, Math.min(0.15, rx)); }
+      if (n0.startsWith('upperarm')) { const lim = list.some(sk => sk.m.addArms) ? 0.7 : 0.38; rz = Math.max(-lim, Math.min(lim, rz)); const lx = lim > 0.5 ? 0.45 : 0.15; rx = Math.max(-lx, Math.min(lx, rx)); }
       if (rx || ry || rz) rotFrame(b[n0], rx, ry, rz);
     }
     hero.group.updateMatrixWorld(true);
