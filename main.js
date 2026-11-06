@@ -187,7 +187,7 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair, roll, chopC, stepC, roulC, elaC, croC, heelC, rbC, dribC] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=11').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/chop.glb?v=11').catch(() => null), loadGLB('assets/stepover.glb?v=12').catch(() => null), loadGLB('assets/roulette.glb?v=13').catch(() => null), loadGLB('assets/elastico.glb?v=14').catch(() => null), loadGLB('assets/croqueta.glb?v=15').catch(() => null), loadGLB('assets/heel.glb?v=16').catch(() => null), loadGLB('assets/rainbow.glb?v=17').catch(() => null), loadGLB('assets/dribble.glb?v=20').catch(e => { console.warn('dribble clip missing', e); return null; })]);
+    const [hero, anims, hair, roll, chopC, stepC, roulC, elaC, croC, heelC, rbC, dribC] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=19').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/chop.glb?v=19').catch(() => null), loadGLB('assets/stepover.glb?v=19').catch(() => null), loadGLB('assets/roulette.glb?v=19').catch(() => null), loadGLB('assets/elastico.glb?v=19').catch(() => null), loadGLB('assets/croqueta.glb?v=19').catch(() => null), loadGLB('assets/heel.glb?v=19').catch(() => null), loadGLB('assets/rainbow.glb?v=19').catch(() => null), loadGLB('assets/dribble.glb?v=19').catch(e => { console.warn('dribble clip missing', e); return null; })]);
     if (roll) anims.animations.push(...roll.animations); if (chopC) anims.animations.push(...chopC.animations); if (stepC) anims.animations.push(...stepC.animations); if (roulC) anims.animations.push(...roulC.animations); if (elaC) anims.animations.push(...elaC.animations); if (croC) anims.animations.push(...croC.animations); if (heelC) anims.animations.push(...heelC.animations); if (rbC) anims.animations.push(...rbC.animations); if (dribC) anims.animations.push(...dribC.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
@@ -386,7 +386,9 @@ function get(type) {
     if (type === 'barrier') o = mkBarrier(); else if (type === 'bar') o = mkBar(); else if (type === 'train') o = mkTrain(); else if (type === 'ball') o = mkBall();
     else if (type === 'rival') { const r = new Runner(RIVAL_KIT, false); o = r.group; o.userData = { type: 'rival', d: 0.6, runner: r }; }
   }
-  o.visible = true; world.add(o); return o;
+  o.visible = true; world.add(o);
+  if (o.userData && o.userData.type === 'rival') { o.userData.beaten = false; o.userData.rated = false; o.userData.react = null; }
+  return o;
 }
 function release(o) { o.visible = false; world.remove(o); pools[o.userData.type].push(o); }
 
@@ -401,8 +403,9 @@ function resetGame() {
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
   Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, bufferT: 0, beaten: 0, airHold: 0 });
   SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SK.pending = null; SK.punch = null; SK.punched = false; SK.roll = 0; SK.fov = 0;
-  SM.g = 1; SM.t = SM.delay = -1; HS.n = 0; FIRE.n = 0; FIRE.on = false; FIRE.t = 0; ACK.t = 0; ACK.held = false; CAM.k = 0;
-  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.air = false; BS.vy = 0; BS.hist = null; _fcp.l = _fcp.r = null;
+  SM.g = 1; SM.t = SM.delay = -1; HS.n = 0; FIRE.n = 0; FIRE.on = false; FIRE.t = 0; ACK.t = 0; ACK.held = false;
+  if (typeof snapCam === 'function') snapCam();
+  hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.air = false; BS.vy = 0; BS.hist = null; BS.needGather = false; BS.flightLocked = false; BS.curveCap = null; _fcp.l = _fcp.r = null;
 }
 
 function spawnRow(z) {
@@ -444,18 +447,29 @@ function act(a) {
   if (a === 'left' || a === 'right') acknowledge(a);
   P.buffer = a; P.bufferT = (a === 'left' || a === 'right') ? DIR_BUFFER : BUFFER_T; tryBuffered();
 }
+// air = rainbow still flying. gather = it has landed and the foot still has to collect it.
+// home = the collect missed and the ball is outside the pocket. A queued swipe waits through all three.
+function rainbowHold() {
+  if (BS.air) return 'air';
+  if (BS.gather && !BS.gather.done && BS.gather.flight) return 'gather';
+  if (BS.needGather && Math.hypot(BS.p.x - B0[0], BS.p.z - B0[2]) > 0.4) return 'home';
+  return '';
+}
 function tryBuffered() {
   const a = P.buffer; if (!a) return;
   if (a === 'left' || a === 'right') {
     const nl = Math.max(0, Math.min(2, P.lane + (a === 'left' ? -1 : 1)));
-    const locked = !!(SK.m && SK.fade === 0 && SK.t < 0.92);
-    // rainbow in the air: keep the swipe (and its acknowledgement) until the ball is back on the grass,
-    // unless a rival in this lane forces the switch now. Do not retarget the airborne ball.
-    if (nl !== P.lane && BS.air && !threatAhead(P.lane)) { ACK.held = true; return; }
-    if (nl !== P.lane && locked && !threatAhead(P.lane)) { ACK.held = true; return; }
+    const hold = rainbowHold();
+    // A rival already in this lane can move the body. The flick is not solved again.
+    if (nl !== P.lane && hold) {
+      const forced = hold === 'air' && threatAhead(P.lane);
+      if (!forced) { ACK.held = true; return; }
+      BS.flightLocked = true;
+    }
+    if (nl !== P.lane && SK.m && SK.fade === 0 && SK.t < 0.92 && !BS.air) { ACK.held = true; return; }
     ACK.held = false;
     if (nl !== P.lane) { const d = nl > P.lane ? 1 : -1; P.lane = nl; P.fromX = P.x; P.toX = LANES[nl]; P.laneT = 0; if (P.grounded && P.slideT <= 0 && !BS.air) startLaneMove(d); else SK.m = null; }
-    P.buffer = null;
+    P.buffer = null; P.airHold = 0;
   } else if (a === 'up') {
     if (P.grounded || P.sinceGround < COYOTE_T) {
       cancelSkill(); P.vy = JUMP_V; P.grounded = false; P.sinceGround = 1; P.slideT = 0; P.buffer = null;
@@ -854,6 +868,9 @@ function startLaneMove(d) {
 function startRoll(d, th) {
   if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
   beginMove(); SK.pending = null; SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK.ev = th && th.o ? Math.max(0.08, th.tti * 0.75) : 0; SK.rolls = (SK.rolls || 0) + 1;
+  // A roll past a rival is still a dodge. The trailing leg whiffs. The group collider stays put.
+  const o = th && th.o;
+  if (o && o.userData.type === 'rival' && !o.userData.react) beginRivalReact(o, th.tti < 0.25 ? 'LATE' : 'GREAT', d);
 }
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
 function pickMove() { let i; do { i = (Math.random() * MOVES.length) | 0; } while (i === SK.last && MOVES.length > 1); SK.last = i; return MOVES[i]; }
@@ -872,16 +889,17 @@ function startSkill(d, forced, th) {
   beginMove(); SK.m = m; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = true; SK.rate = 1; SK.ev = 0;
   if (m.lane && th && th.o) { let tm = m.T; for (let x = 0; x <= m.T; x += 0.01) if (laneAt(x, m.lane) >= 0.5) { tm = x; break; } SK.rate = Math.min(1.8, Math.max(1, tm / Math.max(0.1, th.tti))); SK.ev = Math.max(0.08, th.tti * 0.75); }
   SK.count[m.id] = (SK.count[m.id] || 0) + 1;
-  puff();
   // The dodge is earned at the key touch, not at the swipe. Beaten stays immediate so the collider
   // guarantee does not change; points, the rating and the defender's whiff wait for contact.
+  // An empty lane does not score and does not call out.
   const o = th && th.o;
+  CAM.anchorX = o ? o.position.x : P.fromX;
   SK.pending = null;
   if (o && !o.userData.rated) {
     o.userData.beaten = true;
     const rate = rateOf(th.tti);
     SK.pending = { o, tti: th.tti, rate, riv: o.userData.type === 'rival' };
-    if (SK.pending.riv) o.userData.react = { t: 0, rate, dir: d };
+    if (SK.pending.riv) beginRivalReact(o, rate, d);
     blip('whoosh');
     triggerSlowMo(Math.max(0, Math.min(m.beatT || m.beat * m.T, th.tti) - SLOW.easeIn));
   }
@@ -1005,8 +1023,9 @@ function aimBone(bone, from, to) {
   bone.updateMatrixWorld(true);
 }
 const _H = new THREE.Vector3(), _K = new THREE.Vector3(), _F = new THREE.Vector3(), _T = new THREE.Vector3(), _n = new THREE.Vector3(), _u = new THREE.Vector3();
-function ikLeg(side, target, footQ, hint) {
-  const b = hero.bones, th = b['thigh_' + side], ca = b['calf_' + side], fo = b['foot_' + side];
+function ikLeg(side, target, footQ, hint, bones) {
+  const b = bones || hero.bones, th = b['thigh_' + side], ca = b['calf_' + side], fo = b['foot_' + side];
+  if (!th || !ca || !fo) return;
   th.getWorldPosition(_H); ca.getWorldPosition(_K); fo.getWorldPosition(_F);
   const l1 = _H.distanceTo(_K), l2 = _K.distanceTo(_F);
   _u.subVectors(target, _H); let dd = _u.length(); _u.divideScalar(dd || 1); dd = Math.min(Math.max(dd, Math.abs(l1 - l2) + 0.02), l1 + l2 - 0.003);
@@ -1099,6 +1118,7 @@ function ballDecel(v) { return ROLL.a0 + ROLL.cd * v * v; }
 // impulses, the gather and the safety net see the same sampling at any frame rate / slow-mo stepping
 const SUB = 1 / 240, _fc = { l: [new THREE.Vector3(), new THREE.Vector3()], r: [new THREE.Vector3(), new THREE.Vector3()] }, _fcp = { l: null, r: null };
 function ballRoll(dt, lat) {
+  sampleCurveCapsules();
   const b = hero.bones;
   for (const s of SIDES) { const fo = b['foot_' + s], to = b['ball_' + s]; if (!fo || !to) continue;
     const pa = fo.getWorldPosition(_fc[s][0]), pt = to.getWorldPosition(_fc[s][1]); hero.group.worldToLocal(pa); hero.group.worldToLocal(pt); pt.addScaledVector(_a.subVectors(pt, pa), 0.5);
@@ -1108,7 +1128,11 @@ function ballRoll(dt, lat) {
   for (let i = 1; i <= n; i++) { BS.subA = i / n; ballStep(h, lat / n, t0 + i * h); }
   for (const s of SIDES) if (_fcp[s]) { _fcp[s][0].copy(_fc[s][0]); _fcp[s][1].copy(_fc[s][1]); }
 }
-function capsuleAt(s, out0, out1) { const a = BS.subA; out0.lerpVectors(_fcp[s][0], _fc[s][0], a); out1.lerpVectors(_fcp[s][1], _fc[s][1], a); }
+function capsuleAt(s, out0, out1) {
+  const c = BS.curveCap && BS.curveCap[s];
+  if (c) { const a = BS.subA; out0.lerpVectors(c.pa, c.a, a); out1.lerpVectors(c.pb, c.b, a); return; }
+  const a = BS.subA; out0.lerpVectors(_fcp[s][0], _fc[s][0], a); out1.lerpVectors(_fcp[s][1], _fc[s][1], a);
+}
 function ballStep(dt, lat, now) {
   if (BS.air) { // flight / bounce (rainbow): no foot contact, no gather until it is back on the grass
     const st = { x: BS.p.x, y: BS.p.y, z: BS.p.z, wx: BS.wx, vz: BS.vz, vy: BS.vy, w: BS.w, air: true, bounces: 0 };
@@ -1134,13 +1158,22 @@ function ballStep(dt, lat, now) {
     if (gap > ROLL.gGap && now < G.t + 0.08) {} // not there yet
     else if ((G.done = true) && gap <= ROLL.gGap) {
       const a = ballDecel(S.speed), nz = -Math.min(3.5, Math.sqrt(2 * a * ROLL.ahead)), tr = 2 * -nz / a, nx = Math.max(-2, Math.min(2, -BS.p.x / tr));
-      BS.wx = nx + (SK.m ? lat / dt : 0); BS.vz = nz; BS.gstat.hit++; // after the move the body no longer moves sideways G.tHit = now; BS.gstat.gaps.push(+gap.toFixed(3));
+      BS.wx = nx + (SK.m ? lat / dt : 0); BS.vz = nz; BS.gstat.hit++; if (G.flight) BS.needGather = false; // after the move the body no longer moves sideways G.tHit = now; BS.gstat.gaps.push(+gap.toFixed(3));
       if (BS.rel && !BS.rel.lead) BS.rel.lead = { side: s, dt: +(S.t - BS.rel.t).toFixed(3), x: +(BS.p.x * BS.rel.d).toFixed(3), gap: +gap.toFixed(3) };
     } else { BS.gstat.miss++; BS.gstat.gaps.push(+G.best.toFixed(3)); }
   }
-  // safety net only (counted): ball lost behind / far away from the runner
-  if (!SK.m && !(BS.gather && !BS.gather.done && BS.gather.flight) && (BS.p.z > 0.1 || Math.abs(BS.p.x) > 0.9 || BS.p.z < -1.6)) { BS.assist = (BS.assist || 0) + dt; // steer back (critically damped), no snap
-    const wn = 6; BS.wx += ((0 - BS.p.x) * wn * wn - (BS.wx - (BS.latv || 0)) * 2 * wn) * dt; BS.vz += ((B0[2] - BS.p.z) * wn * wn - BS.vz * 2 * wn) * dt; }
+  // safety net only (counted): ball lost behind / far away from the runner.
+  // A missed rainbow that landed just inside that box still has to come home. A normal dribble that reaches z≈-1.05 is left alone.
+  if (BS.needGather && !BS.air && Math.hypot(BS.p.x - B0[0], BS.p.z - B0[2]) < 0.38) BS.needGather = false;
+  if (!BS.air && !BS.needGather) BS.flightLocked = false;
+  if (!SK.m && !(BS.gather && !BS.gather.done && BS.gather.flight)) {
+    const wide = BS.p.z > 0.1 || Math.abs(BS.p.x) > 0.9 || BS.p.z < -1.6;
+    const stranded = !!BS.needGather && !BS.air && BS.p.z < -1.05 && (B0[2] - BS.p.z) > 0.62;
+    if (wide || stranded) {
+      if (wide) BS.assist = (BS.assist || 0) + dt;
+      const wn = 6; BS.wx += ((0 - BS.p.x) * wn * wn - (BS.wx - (BS.latv || 0)) * 2 * wn) * dt; BS.vz += ((B0[2] - BS.p.z) * wn * wn - BS.vz * 2 * wn) * dt;
+    }
+  }
 }
 // feet as capsules (ankle -> toe tip, radius rf): no interpenetration; a forward-swinging foot in the jog = a dribble touch
 function footCollide(dt, latv) {
@@ -1421,17 +1454,27 @@ function applyBodyAccent(b, body) {
 
 // Timing is seconds-to-threat at the swipe, so a faster run does not shrink the window into a distance.
 function rateOf(tti) { return tti < 0.20 ? 'LATE' : tti <= 0.38 ? 'PERFECT' : 'GREAT'; }
-const FIRE = { n: 0, on: false, t: 0, need: 3 };
+const FIRE = { n: 0, on: false, t: 0, need: 3, dur: 8 };
+function visualRate(tti) {
+  if (typeof window.__rate === 'function') return window.__rate(tti);
+  return rateOf(tti);
+}
 function addFire(rate) {
   if (FIRE.on) return false;
   FIRE.n = Math.min(FIRE.need, FIRE.n + (rate === 'PERFECT' ? 1 : rate === 'GREAT' ? 0.4 : 0.15));
-  if (FIRE.n >= FIRE.need - 1e-3) { FIRE.on = true; FIRE.t = 8; blip('fire'); return true; }
+  if (FIRE.n >= FIRE.need - 1e-6) { FIRE.on = true; FIRE.t = FIRE.dur; blip('fire'); return true; }
   return false;
 }
 function onKeyTouch() {
-  puff(); burst(); blip('touch');
+  puff(); blip('touch');
+  // Camera punch rides the gameplay touch. 1.8° FOV, a tenth of a metre closer, under 1° of roll.
+  if (!REDUCED) {
+    CAM.kick = Math.min(2, Math.max(CAM.kick || 0, 1.8));
+    CAM.inset = 0.1;
+    CAM.hold = 0.045;
+    CAM.roll = Math.max(-0.012, Math.min(0.012, (SK.d || 1) * 0.009));
+  }
   const pnd = SK.pending; SK.pending = null;
-  if (!REDUCED && pnd) SK.fov = Math.max(SK.fov, SLOW.fovKick);
   if (!pnd || !pnd.o || pnd.o.userData.rated || S.state !== 'play') return;
   pnd.o.userData.rated = true;
   SK.combo = S.t - SK.comboT < COMBO_WIN ? SK.combo + 1 : 1; SK.comboT = S.t; P.beaten++;
@@ -1445,41 +1488,91 @@ function onKeyTouch() {
   SK.lastRate = pnd.rate;
 }
 
-// Defender reaction is visual only: the group (the collider) does not move.
-const _fqR = new THREE.Quaternion();
+// Defender reaction is visual only. The group (the collider) is not moved.
 function calmRival(o) {
   const u = o && o.userData; if (!u || u.type !== 'rival') return;
-  u.react = null; u.rated = false; u._lean = 0;
+  u.react = null; u.rated = false;
   const m = u.runner && u.runner.model;
   if (m && m !== u.runner.group) { m.rotation.x = 0; m.rotation.z = 0; m.position.set(0, 0, 0); }
 }
-// TODO(ball): Mixamo's only tackle is Soccer Tackle, a slide. Hips fall from about 0.97 m to 0.24 m
-// and the trunk folds past 70° while one leg stays long. There is no standing tackle in that pack.
-// This track still poses the rival as a whole-body lean. A trailing leg or a slide is the ball track's
-// call; the collider stays where it is.
+// The trailing leg whiffs in the lane the hero just left. Mixamo's slide (hips 0.97 → 0.24 m)
+// is the reference for a full tackle; this pose stays a one-leg miss so the collider does not move.
+function beginRivalReact(o, rate, dir) {
+  const run = o.userData && o.userData.runner;
+  if (!run || !run.bones || !run.bones.thigh_l) return;
+  const kind = rate === 'GREAT' ? 'check' : rate === 'LATE' ? 'slide' : 'tackle';
+  o.userData.react = { t: 0, rate, dir, kind, side: null };
+  if (run.currentName !== 'Idle_Loop') run.play('Idle_Loop', 0.08, 1);
+}
 function poseRival(o, dt) {
-  const u = o.userData, run = u.runner;
-  if (!run || !run.bones || !run.model || run.model === run.group) return;
-  const model = run.model, r = u.react;
-  if (!r) {
-    if (u._lean) { model.rotation.x = 0; model.rotation.z = 0; model.position.set(0, 0, 0); u._lean = 0; }
-    return;
+  const u = o.userData, r = u.react, run = u.runner;
+  if (!r || !run || !run.bones || !run.bones.foot_l) return;
+  r.t += dt;
+  const dur = r.kind === 'check' ? 0.42 : r.kind === 'slide' ? 0.78 : 0.64;
+  if (r.t >= dur) { u.react = null; return; }
+  run.group.updateMatrixWorld(true);
+  if (!r.side) {
+    const xl = run.bones.foot_l.getWorldPosition(_a).x, xr = run.bones.foot_r.getWorldPosition(_b).x;
+    r.side = (xl - o.position.x) * r.dir <= (xr - o.position.x) * r.dir ? 'l' : 'r';
   }
-  r.t += dt; u._lean = 1;
-  const amp = r.rate === 'PERFECT' ? 1 : r.rate === 'LATE' ? 1.15 : 0.6;
-  const bite = Math.sin(Math.min(1, r.t / 0.22) * Math.PI);
-  const w = r.t < 0.2 ? r.t / 0.2 : Math.max(0, 1 - (r.t - 0.2) / 0.55);
-  model.rotation.x = (r.rate === 'LATE' ? 0.65 : 0.36) * amp * bite;
-  model.rotation.z = -r.dir * (r.rate === 'GREAT' ? 0.14 : 0.3) * amp * w;
-  model.position.z = 0.16 * amp * bite;
-  model.position.y = r.rate === 'LATE' ? -0.14 * bite : 0;
-  model.updateMatrixWorld(true);
-  _fqR.copy(_fq); model.getWorldQuaternion(_fq);
-  const sp = run.bones.spine_02, nk = run.bones.neck_01;
-  if (sp) rotFrame(sp, 0.22 * amp * w, r.dir * 0.32 * amp * w, 0);
-  if (nk) rotFrame(nk, -0.18 * w, -r.dir * 0.4 * amp * w, 0);
-  _fq.copy(_fqR);
-  if (r.t > 0.85) u.react = null;
+  const strike = Math.sin(Math.min(1, r.t / dur) * Math.PI);
+  if (strike < 0.05) return;
+  const side = r.side, amp = r.kind === 'check' ? 0.7 : r.rate === 'PERFECT' ? 1.12 : 1;
+  const fwd = (r.kind === 'check' ? 0.12 : r.kind === 'slide' ? 0.22 : 0.2) * amp;
+  const lift = r.kind === 'slide' ? 0.08 : r.kind === 'check' ? 0.46 : 0.34;
+  const lat = -r.dir * (r.kind === 'check' ? 0.16 : r.kind === 'slide' ? 0.58 : 0.5) * Math.min(1.05, amp);
+  const fo = run.bones['foot_' + side]; if (!fo) return;
+  fo.getWorldPosition(_mp);
+  const tx = Math.max(o.position.x - 0.7, Math.min(o.position.x + 0.7, o.position.x + lat));
+  _a.set(tx, lift, o.position.z + fwd);
+  _mp.lerp(_a, strike);
+  fo.getWorldQuaternion(_mq);
+  _hint.l.set(tx, 1.05, o.position.z + 0.15);
+  ikLeg(side, _mp, _mq, _hint.l, run.bones);
+}
+
+// Animation hook. Leave unset and the IK pin plus the bone capsules stay in charge.
+// fn({ side, surf, move, id, t, d }) -> null, or { contact }, { pos, quat, surf? }, or { capsule: { a, b } }.
+function setCurveFoot(fn) { BS.curveFoot = typeof fn === 'function' ? fn : null; BS.curveCap = null; }
+function copyVec(v, out) {
+  if (!v) return null;
+  if (typeof v.x === 'number') return out.set(v.x, v.y || 0, v.z || 0);
+  if (Array.isArray(v)) return out.set(+v[0] || 0, +v[1] || 0, +v[2] || 0);
+  return null;
+}
+function readCurveFoot(side, surf) {
+  if (typeof BS.curveFoot !== 'function' || !SK.m) return null;
+  let sample = null;
+  try { sample = BS.curveFoot({ side, surf, move: SK.m, id: SK.m.id, t: Math.min(SK.m.T, Math.max(0, SK.t) * SK.m.T), d: SK.d }); }
+  catch (e) { return null; }
+  return sample && (sample.pos || sample.contact || sample.capsule) ? sample : null;
+}
+function pinCurveFoot(tc) {
+  const sample = readCurveFoot(tc.side, tc.surf); if (!sample || (sample.capsule && !sample.pos && !sample.contact)) return false;
+  const surf = sample.surf || tc.surf;
+  if (sample.contact && copyVec(sample.contact, _bw)) { /* ball centre already */ }
+  else if (copyVec(sample.pos, _bw)) {
+    let q = null;
+    if (sample.quat && sample.quat.isQuaternion) q = sample.quat;
+    else if (sample.quat && typeof sample.quat.w === 'number') q = _q1.set(sample.quat.x, sample.quat.y, sample.quat.z, sample.quat.w);
+    if (q) _bw.add(surfOff(tc.side, surf, _c).applyQuaternion(q));
+  } else return false;
+  _bw.y = Math.max(BR, _bw.y); BS.p.copy(_bw); BS.curveDriven = true; return true;
+}
+function sampleCurveCapsules() {
+  if (typeof BS.curveFoot !== 'function' || !SK.m) { BS.curveCap = null; return; }
+  const cap = BS.curveCap || (BS.curveCap = { l: null, r: null });
+  let any = false;
+  for (const s of SIDES) {
+    const sample = readCurveFoot(s, null);
+    if (!sample || !sample.capsule) { cap[s] = null; continue; }
+    const slot = cap[s] || (cap[s] = { a: new THREE.Vector3(), b: new THREE.Vector3(), pa: new THREE.Vector3(), pb: new THREE.Vector3(), ready: false });
+    if (slot.ready) { slot.pa.copy(slot.a); slot.pb.copy(slot.b); }
+    if (!copyVec(sample.capsule.a, slot.a) || !copyVec(sample.capsule.b, slot.b)) { cap[s] = null; continue; }
+    if (!slot.ready) { slot.pa.copy(slot.a); slot.pb.copy(slot.b); slot.ready = true; }
+    any = true;
+  }
+  if (!any) BS.curveCap = null;
 }
 
 // Original synthesis (no samples). Unlocked from the start gesture. Six voices. Mute is always available.
@@ -1645,10 +1738,13 @@ function applySkillPose(dt) {
     // TODO(ball): elastico's two touches are one ankle wrap. The foot now travels through the gap; pinning the ball across that gap belongs to the ball track.
     const last = tcs.reduce((a, c) => Math.max(a, c.t1), 0);
     if (tc) {
-      // contact: pin the ball to the ACTUAL foot surface after IK (exact contact even if IK clamps or blends)
-      const fo = b['foot_' + tc.side]; fo.getWorldPosition(_bw); fo.getWorldQuaternion(_q1); _q1.multiply(_q2.copy(FOOT_REL[tc.side]).invert());
-      _bw.add(surfOff(tc.side, tc.surf, _c).applyQuaternion(_q1)); hero.group.worldToLocal(_bw); _bw.y = Math.max(BR, _bw.y);
-      BS.p.copy(_bw); pinned = tc; phys = false;
+      // Curve foot wins when one has been handed over. Otherwise pin to the IK sole.
+      if (!pinCurveFoot(tc)) {
+        const fo = b['foot_' + tc.side]; fo.getWorldPosition(_bw); fo.getWorldQuaternion(_q1); _q1.multiply(_q2.copy(FOOT_REL[tc.side]).invert());
+        _bw.add(surfOff(tc.side, tc.surf, _c).applyQuaternion(_q1)); hero.group.worldToLocal(_bw); _bw.y = Math.max(BR, _bw.y);
+        BS.p.copy(_bw);
+      }
+      pinned = tc; phys = false;
     } else if (t < last || !aimedMove(SK.m)) { freeBall(SK, t, BS.p); phys = false; } // only the airborne rainbow keeps its authored flight
   }
   if (phys && dt > 0) {
@@ -1659,9 +1755,11 @@ function applySkillPose(dt) {
       // forward: the capture ran at ~3 m/s, the game at 13-30 m/s, so the sole's backward drag is clamped to keep the ball in front
       BS.vz = Math.max(-1.2, Math.min(0.2, BS.vz));
       // sideways: the capture's foot swing is far faster than the lane shift needs; the ball leaves at most ROLL.relX faster than the body
-      if (SK.m && SK.m.flick) { // rainbow: the heel flick launches the ball over the head into the new lane (ballistic, solved)
-        const d = Math.sign(P.toX - P.fromX) || 1, f = solveFlick(BS.p, P.toX + d * ROLL.leadX - P.x - BS.p.x, S.speed);
-        BS.wx = f.wx; BS.vz = f.vz; BS.vy = f.vy; BS.w = f.w; BS.air = true; BS.bounces = 0; BS.gT = f.tGather; BS.flight = f; BS.tgtX = P.toX + d * ROLL.leadX;
+      if (SK.m && SK.m.flick) { // rainbow: one solved arc. A swipe during the flight must not solve another.
+        if (!BS.flightLocked) {
+          const d = Math.sign(P.toX - P.fromX) || 1, f = solveFlick(BS.p, P.toX + d * ROLL.leadX - P.x - BS.p.x, S.speed);
+          BS.wx = f.wx; BS.vz = f.vz; BS.vy = f.vy; BS.w = f.w; BS.air = true; BS.bounces = 0; BS.gT = f.tGather; BS.flight = f; BS.tgtX = P.toX + d * ROLL.leadX; BS.flightLocked = true; BS.needGather = true;
+        }
       } else if (SK.m && aimedMove(SK.m)) { // the touch aims the ball into the new lane: it arrives just ahead of where the body finishes
         const lv = BS.latv || 0, d = Math.sign(P.toX - P.fromX) || 1, tNow = Math.min(1, SK.t) * SK.m.T; let tEnd = SK.m.T;
         if (SK.ev) for (let x = tNow; x <= SK.m.T; x += 0.005) if (laneProg(SK, x) >= 0.97) { tEnd = x; break; } // late dodge: the body arrives early
@@ -1699,28 +1797,33 @@ function applySkillPose(dt) {
 }
 // streak trail + dust puff
 const trail = [];
+const blades = [];
 function initFX() {
   for (let i = 0; i < 7; i++) { const g = new THREE.Mesh(new THREE.SphereGeometry(0.15 * (1 - i * 0.1), 10, 8), new THREE.MeshBasicMaterial({ color: i < 2 ? 0xfff2b0 : 0xff6a3d, transparent: true, opacity: 0, depthWrite: false })); g.visible = false; scene.add(g); trail.push({ m: g, p: new THREE.Vector3() }); }
-  const pg = new THREE.RingGeometry(0.1, 0.35, 20); pg.rotateX(-Math.PI / 2);
+  const pg = new THREE.RingGeometry(0.1, 0.32, 18); pg.rotateX(-Math.PI / 2);
   puffM = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: 0xe8d9b5, transparent: true, opacity: 0, depthWrite: false })); scene.add(puffM);
   pip = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.48, 4), new THREE.MeshBasicMaterial({ color: 0xffe26a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
   pip.rotation.x = -Math.PI / 2; pip.rotation.z = Math.PI / 4; pip.visible = false; scene.add(pip);
-  const mg = new THREE.PlaneGeometry(0.16, 0.16); mg.rotateX(-Math.PI / 2);
+  const bg = new THREE.PlaneGeometry(0.1, 0.24);
+  const bm = new THREE.MeshBasicMaterial({ color: 0xd5e7a2, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
   for (let i = 0; i < 8; i++) {
-    const m = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffe26a : 0xc8b48a, transparent: true, opacity: 0, depthWrite: false }));
-    m.visible = false; scene.add(m); motes.push({ m, life: 1, vx: 0, vz: 0 });
+    const m = new THREE.Mesh(bg, bm); m.visible = false; m.frustumCulled = false; scene.add(m);
+    blades.push({ m, life: 1, vx: 0, vy: 0, vz: 0 });
   }
 }
 let puffM = null, puffT = 1, pip = null;
-const motes = [];
-function puff() { if (!puffM || !footBall) return; footBall.getWorldPosition(puffM.position); puffM.position.y = 0.03; puffT = 0; }
-function burst() {
-  if (!footBall || !motes.length) return;
-  footBall.getWorldPosition(_bp);
-  for (let i = 0; i < motes.length; i++) {
-    const q = motes[i], a = i / motes.length * Math.PI * 2;
-    q.m.visible = true; q.m.position.copy(_bp); q.m.position.y = 0.04; q.life = 0;
-    q.vx = Math.cos(a) * 1.3; q.vz = Math.sin(a) * 1.3;
+function puff() {
+  if (!puffM || !footBall) return;
+  footBall.getWorldPosition(puffM.position);
+  const d = SK.d || 1;
+  puffM.position.x += -d * 0.07;
+  puffM.position.y = 0.025;
+  puffM.position.z += 0.14;
+  puffT = 0;
+  for (let i = 0; i < blades.length; i++) {
+    const q = blades[i], a = i / blades.length * Math.PI * 2 + 0.4;
+    q.life = 0; q.m.visible = true; q.m.position.copy(puffM.position); q.m.rotation.y = a;
+    q.vx = Math.cos(a) * (0.7 + (i % 3) * 0.15); q.vz = Math.sin(a) * 0.45; q.vy = 1.35 + (i % 4) * 0.16;
   }
 }
 const _bp = new THREE.Vector3();
@@ -1728,27 +1831,96 @@ function updateFX(dt, dz) {
   if (!footBall || !trail.length) return;
   footBall.getWorldPosition(_bp);
   const on = FIRE.on || (!!SK.m && SK.fade === 0 && SK.skill);
+  if (trail.fire !== FIRE.on) {
+    trail.fire = !!FIRE.on;
+    for (let i = 0; i < trail.length; i++) trail[i].m.material.color.setHex(FIRE.on ? 0xffe26a : (i < 2 ? 0xfff2b0 : 0xff6a3d));
+  }
   for (let i = trail.length - 1; i > 0; i--) { trail[i].p.copy(trail[i - 1].p); trail[i].p.z += dz; }
   trail[0].p.copy(_bp);
-  for (let i = 0; i < trail.length; i++) { const t = trail[i]; t.m.visible = on && i > 0; t.m.position.copy(t.p); t.m.material.opacity = on ? 0.55 * (1 - i / trail.length) : 0; }
-  if (puffT < 1) { puffT += dt / 0.35; puffM.position.z += dz; puffM.scale.setScalar(1 + puffT * 2.5); puffM.material.opacity = 0.7 * (1 - puffT); } else puffM.material.opacity = 0;
-  for (const q of motes) {
+  for (let i = 0; i < trail.length; i++) { const t = trail[i]; t.m.visible = on && i > 0; t.m.position.copy(t.p); t.m.material.opacity = on ? (FIRE.on ? 0.7 : 0.55) * (1 - i / trail.length) : 0; }
+  if (puffT < 1) { puffT += dt / 0.32; puffM.position.z += dz; puffM.scale.setScalar(1 + puffT * 2.2); puffM.material.opacity = 0.65 * (1 - puffT); } else if (puffM) puffM.material.opacity = 0;
+  let alive = false;
+  for (const q of blades) {
     if (q.life >= 1) { q.m.visible = false; continue; }
-    q.life += dt / 0.22; q.m.position.x += q.vx * dt; q.m.position.z += q.vz * dt + dz; q.m.position.y = 0.04 + q.life * 0.22;
-    q.m.material.opacity = 0.65 * (1 - q.life); q.m.scale.setScalar(0.6 + q.life);
+    alive = true; q.life += dt / 0.28; q.vy -= 3.4 * dt;
+    q.m.position.x += q.vx * dt; q.m.position.z += q.vz * dt + dz; q.m.position.y = Math.max(0.02, q.m.position.y + q.vy * dt);
   }
+  if (blades.length) blades[0].m.material.opacity = alive ? 0.75 * (1 - blades[0].life) : 0;
 }
 
 // ---------- loop ----------
 const clock = new THREE.Timer(); clock.connect?.(document);
-const camPos = new THREE.Vector3(0, 3.0, 5.0), camLook = new THREE.Vector3(0, 1.2, -6);
-const CAM = { k: 0, ref: null };
-const _skillPos = new THREE.Vector3(), _skillLook = new THREE.Vector3(), _lookB = new THREE.Vector3();
+// Phone portrait spends the frame on the body. A skill eases closer for 0.14s and back out over 0.28s.
+// Root translation only. Johnny's signed-off framing: about 1.4 m high and 3.8 m back.
+const CAM = { u: 0, kick: 0, roll: 0, inset: 0, hold: 0, anchorX: 0, sx: 0.16, sy: 1.4, sz: 3.82, lx: 0, ly: 0.46, lz: -1.62 };
+const SKILL_DOLLY = { fov: -8, back: -0.7, height: -0.16, lookY: -0.05, lookZ: -0.28 };
+const _popV = new THREE.Vector3();
 let shake = 0;
+function runnerRig() {
+  return innerWidth / innerHeight < 0.75
+    ? { fov: 71, back: 3.82, height: 1.4, side: 0.16, lookY: 0.46, lookZ: 1.62 }
+    : { fov: 50, back: 4.35, height: 1.64, side: 0.4, lookY: 0.58, lookZ: 2.15 };
+}
+function damp(cur, goal, dt, tau) { return dt > 0 ? cur + (goal - cur) * (1 - Math.exp(-dt / tau)) : cur; }
+function snapCam() {
+  const b = runnerRig();
+  CAM.u = 0; CAM.kick = 0; CAM.roll = 0; CAM.inset = 0; CAM.hold = 0; CAM.anchorX = P.x || 0;
+  CAM.sx = (P.x || 0) + b.side; CAM.sy = b.height; CAM.sz = b.back;
+  CAM.lx = (P.x || 0) * 0.86; CAM.ly = b.lookY; CAM.lz = -b.lookZ;
+}
+function updateGameCamera(rdt) {
+  const b = runnerRig();
+  const want = S.state === 'play' && SK.m && SK.skill && SK.fade === 0 ? 1 : 0;
+  const durIn = REDUCED ? 0.32 : 0.14, durOut = REDUCED ? 0.45 : 0.28;
+  if (rdt > 0) {
+    if (want > CAM.u) CAM.u = Math.min(1, CAM.u + rdt / durIn);
+    else CAM.u = Math.max(0, CAM.u - rdt / durOut);
+    if (CAM.hold > 0) CAM.hold -= rdt; else CAM.inset *= Math.exp(-rdt * 7);
+    CAM.kick *= Math.exp(-rdt * 8);
+    CAM.roll = REDUCED ? 0 : CAM.roll * Math.exp(-rdt * 8);
+  }
+  const s = CAM.u * CAM.u * (3 - 2 * CAM.u);
+  const d = SK.d || 1, anchor = CAM.anchorX || 0, py = P.y || 0;
+  const gap = Math.min(2.2, Math.abs(P.x - anchor));
+  const together = Math.max(0, 1 - gap / 1.8);
+  const k = s * (0.22 + 0.78 * together);
+  const trackX = P.x * (1 - s) + (anchor * 0.5 + P.x * 0.5) * s;
+  const side = b.side * (1 - s) + d * 0.05 * s;
+  const back = b.back + SKILL_DOLLY.back * k - (REDUCED ? 0 : CAM.inset);
+  const height = b.height + SKILL_DOLLY.height * k + py * 0.32;
+  const lookY = b.lookY + SKILL_DOLLY.lookY * k + py * 0.2;
+  const lookZ = b.lookZ + SKILL_DOLLY.lookZ * k;
+  const lookX = P.x * 0.86 * (1 - s) + (anchor * 0.5 + P.x * 0.5) * s;
+  const tau = 0.065;
+  CAM.sx = damp(CAM.sx, trackX + side, rdt, tau);
+  CAM.sy = damp(CAM.sy, height, rdt, 0.08);
+  CAM.sz = damp(CAM.sz, back, rdt, tau);
+  CAM.lx = damp(CAM.lx, lookX, rdt, 0.06);
+  CAM.ly = damp(CAM.ly, lookY, rdt, 0.06);
+  CAM.lz = damp(CAM.lz, -lookZ, rdt, 0.06);
+  camera.position.set(CAM.sx, CAM.sy, CAM.sz);
+  if (shake > 0) { shake -= rdt; if (!REDUCED && shake > 0) camera.position.x += Math.sin(shake * 46) * shake * 0.03; }
+  const legacy = Math.max(-2, Math.min(2, SK.fov || 0));
+  const fov = b.fov + SKILL_DOLLY.fov * k + legacy + (REDUCED ? 0 : CAM.kick);
+  if (Math.abs(camera.fov - fov) > 0.03) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  camera.up.set(Math.sin(CAM.roll), Math.cos(CAM.roll), 0);
+  camera.lookAt(CAM.lx, CAM.ly, CAM.lz);
+  if (window.__camLow) { camera.up.set(0, 1, 0); camera.position.set(P.x + 1.1, 0.95, 3.1); camera.lookAt(P.x - 0.1, 0.62, -0.6); }
+}
+function placePopup() {
+  const p = document.getElementById('popup');
+  if (!p || !p.classList.contains('on') || !hero) return;
+  camera.updateMatrixWorld();
+  _popV.set(P.x + (SK.d || 1) * 0.02, 1.58 + (P.y || 0), 0.05);
+  _popV.project(camera);
+  if (_popV.z > 1) return;
+  p.style.left = Math.max(86, Math.min(innerWidth - 86, (_popV.x * 0.5 + 0.5) * innerWidth)) + 'px';
+  p.style.top = Math.max(54, Math.min(innerHeight * 0.32, (-_popV.y * 0.5 + 0.5) * innerHeight)) + 'px';
+}
 
 function resize() {
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h;
-  camera.fov = w / h < 0.75 ? 72 : 62; camera.updateProjectionMatrix();
+  camera.fov = runnerRig().fov; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
 
@@ -1758,16 +1930,16 @@ function updatePlay(dt, rdt = dt) {
   S.t += dt;
   S.speed = Math.min(MAX_SPEED, S.speed + ACCEL * dt * (S.speed < 20 ? 1.4 : 0.8));
   const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30) * (FIRE.on ? 2 : 1);
-  if (FIRE.on) { FIRE.t -= dt; if (FIRE.t <= 0) { FIRE.on = false; FIRE.n = 0; } }
+  if (FIRE.on) { FIRE.t -= rdt; if (FIRE.t <= 0) { FIRE.on = false; FIRE.n = 0; FIRE.t = 0; } }
   // move clock first, so the body's lane position and the pose/ball solved this frame use the same move time
   if (SK.m) {
-    if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) SK.m = null; }
+    if (SK.fade > 0) { SK.fade -= dt / 0.09; if (SK.fade <= 0) { SK.m = null; if (!SK.punched) SK.pending = null; } }
     else {
       const prevT = SK.t;
       SK.t += dt * (SK.rate || 1) / SK.m.T;
       const beat = SK.m.beatT || 0;
       if (!SK.punched && prevT * SK.m.T < beat && Math.min(SK.t, 1) * SK.m.T >= beat) { SK.punch = SK.m; SK.punched = true; }
-      if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; }
+      if (SK.t >= 1) { if (!SK.punched) SK.pending = null; if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.m = null; }
     }
   }
   // lanes
@@ -1785,12 +1957,12 @@ function updatePlay(dt, rdt = dt) {
   if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) playRun(0.15); }
   if (P.buffer) {
     const directional = P.buffer === 'left' || P.buffer === 'right';
-    const locked = directional && !!(SK.m && SK.fade === 0 && SK.t < 0.92);
-    const airborne = directional && !!BS.air;
-    if (airborne) { P.airHold = (P.airHold || 0) + rdt; if (P.airHold > 2.5) { P.buffer = null; ACK.held = false; P.airHold = 0; } }
+    const held = directional && !!rainbowHold();
+    const locked = directional && !held && !!(SK.m && SK.fade === 0 && SK.t < 0.92);
+    if (held) { P.airHold = (P.airHold || 0) + rdt; if (P.airHold > 2.8) { P.buffer = null; ACK.held = false; P.airHold = 0; } }
     else P.airHold = 0;
-    if (P.buffer && !airborne && !locked) P.bufferT -= rdt;
-    if (P.buffer && P.bufferT <= 0 && !airborne && !locked) { P.buffer = null; ACK.held = false; }
+    if (P.buffer && !held && !locked) P.bufferT -= rdt;
+    if (P.buffer && P.bufferT <= 0 && !held && !locked) { P.buffer = null; ACK.held = false; }
     if (P.buffer) tryBuffered();
   }
   if (hero.currentName === 'Jog_Fwd_Loop' || (hero.currentName && hero.currentName.indexOf('Dribble_') === 0)) hero.current.timeScale = runTimeScale();
@@ -1817,7 +1989,7 @@ function updatePlay(dt, rdt = dt) {
     let ob0 = 0, ob1 = 0;
     if (u.type === 'barrier') { ob0 = 0; ob1 = u.h; } else if (u.type === 'bar') { ob0 = u.y0; ob1 = 2.0; } else if (u.type === 'train') { ob0 = 0; ob1 = 3; } else { ob0 = 0; ob1 = 1.75; }
     if (u.type === 'rival' && u.beaten && u.lane !== P.lane) continue;
-    if (hb.y1 > ob0 && hb.y0 < ob1) { shake = 0.4; gameOver(); return; }
+    if (hb.y1 > ob0 && hb.y0 < ob1) { shake = REDUCED ? 0 : 0.16; if (!REDUCED) CAM.kick = Math.min(2, Math.max(CAM.kick || 0, 1.4)); gameOver(); return; }
   }
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i]; b.position.z += dz; b.rotation.y += dt * 4;
@@ -1845,41 +2017,19 @@ function frame() {
   if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') applySkillPose(dt); }
   updateFX(dt, S.state === 'play' ? S.speed * dt : 0);
   if (SK.fov > 0.01) SK.fov *= Math.exp(-rdt * 9);
-  const fov0 = innerWidth / innerHeight < 0.75 ? 72 : 62; if (Math.abs(camera.fov - fov0 - SK.fov) > 0.01) { camera.fov = fov0 + SK.fov; camera.updateProjectionMatrix(); }
   // L train cruises along the elevated track
   lTrain.position.z += dt * (S.state === 'play' ? S.speed + 12 : 10); if (lTrain.position.z > 60) lTrain.position.z = -260 - Math.random() * 120;
 
   if (S.state === 'title') {
     titleT += dt * 0.35;
     const close = window.__closeup, a = Math.sin(titleT) * 0.9, r = close ? 1.7 : 3.0;
+    camera.up.set(0, 1, 0);
     camera.position.set(Math.sin(a) * r, close ? 1.6 : 1.45, -Math.cos(a) * r);
     camera.lookAt(0, close ? 1.35 : 1.05, 0);
     faceL.position.copy(camera.position).add(new THREE.Vector3(0.5, 0.8, 0)); faceL.intensity = 1.4;
   } else if (hero) {
-    const tx = P.x * 0.6, ty = 2.9 + P.y * 0.45;
-    camPos.x += (tx - camPos.x) * Math.min(1, dt * 7); camPos.y += (ty - camPos.y) * Math.min(1, dt * 5); camPos.z = 4.9;
-    camera.position.copy(camPos);
-    if (shake > 0) { shake -= dt; if (!REDUCED) { camera.position.x += (Math.random() - .5) * shake * .5; camera.position.y += (Math.random() - .5) * shake * .5; } }
-    camLook.set(P.x * 0.8, 1.25 + P.y * 0.3, -7); camera.lookAt(camLook);
-    if (!window.__camLow) {
-      const want = S.state === 'play' && SK.m && SK.skill && SK.fade === 0 && !REDUCED ? 1 : 0;
-      if (want && SK.m) CAM.ref = bodyRef(SK.m).cam;
-      CAM.k += (want - CAM.k) * Math.min(1, Math.max(rdt, 0) * (want ? 7 : 3.2));
-      if (CAM.k > 0.004 && CAM.ref) {
-        const c = CAM.ref, u = CAM.k * CAM.k * (3 - 2 * CAM.k), side = -(SK.d || 1);
-        _skillPos.set(P.x + side * c.side, c.height + P.y * 0.35, c.back);
-        _skillLook.set(P.x + (SK.d || 1) * 0.22, c.lookY + P.y * 0.15, -c.lookZ);
-        camera.position.lerp(_skillPos, u);
-        _lookB.copy(camLook).lerp(_skillLook, u);
-        camera.lookAt(_lookB);
-        const baseFov = innerWidth / innerHeight < 0.75 ? 72 : 62;
-        camera.fov = baseFov + (SK.fov || 0) * (1 - u) + (c.fov - baseFov) * u;
-        camera.updateProjectionMatrix();
-      }
-      if (!REDUCED && Math.abs(SK.roll || 0) > 0.0004) { camera.rotateZ(SK.roll); SK.roll *= Math.exp(-Math.max(rdt, 0) * 8); }
-      else SK.roll = 0;
-    }
-    if (window.__camLow) { camera.position.set(P.x + 1.1, 0.95, 3.1); camera.lookAt(P.x - 0.1, 0.62, -0.6); } // test/render hook only (game camera unchanged)
+    updateGameCamera(rdt);
+    placePopup();
   }
   if (S.state !== 'title') faceL.intensity = 0;
   if (ACK.t > 0) ACK.t = Math.max(0, ACK.t - rdt);
@@ -1902,10 +2052,8 @@ function frame() {
 window.__spawnObstacleAhead = (type = 'barrier', z = -6) => { const o = get(type); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return o; };
 window.__spawnRivalAhead = (z = -4) => { const o = get("rival"); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; calmRival(o); obstacles.push(o); return (window.__lastObs = o); };
 window.__cam = camera;
-window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
+window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame, CAM, FIRE, ACK, rateOf, visualRate, setCurveFoot };
 window.__fireRush.BODY_REF = BODY_REF;
-window.__fireRush.FIRE = FIRE;
-window.__fireRush.rateOf = rateOf;
 window.__fireRush.AU = AU;
 window.__fireRush.installBodyCurves = installBodyCurves;
 window.__fireRush.sampleMoveCurves = sampleMoveCurves;
