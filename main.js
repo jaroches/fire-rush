@@ -186,7 +186,7 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair, roll] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=20').catch(e => { console.warn('mocap roll-over clip missing', e); return null; })]);
+    const [hero, anims, hair, roll] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=21').catch(e => { console.warn('mocap roll-over clip missing', e); return null; })]);
     if (roll) anims.animations.push(...roll.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
@@ -244,13 +244,40 @@ class Runner {
       this.model = this.group;
     }
   }
+  // Dead blend: the incoming clip plays immediately and the frozen pose offset decays.
+  // No crossfade, so a swipe, landing, or get-up starts on this frame.
+  freeze(tau = 0.08) {
+    if (!this.bones) return;
+    this._frozen = {};
+    for (const n in this.bones) this._frozen[n] = this.bones[n].quaternion.clone();
+    this._frozenPos = this.bones.pelvis ? this.bones.pelvis.position.clone() : null;
+    this._inert = 1; this._tau = tau;
+    this._iq = this._iq || [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];
+  }
   play(name, fade = 0.12, timeScale = 1) {
     if (!this.mixer || !this.actions[name]) return;
     const a = this.actions[name];
     if (this.current === a) { a.timeScale = timeScale; return; }
+    this.freeze(Math.max(0.05, fade));
     a.reset(); a.timeScale = timeScale; a.enabled = true; a.setEffectiveWeight(1);
-    if (this.current) a.crossFadeFrom(this.current, fade, false);
+    if (this.current) this.current.setEffectiveWeight(0);
     a.play(); this.current = a; this.currentName = name;
+  }
+  applyInert(dt) {
+    if (!this._inert || !this._frozen) return;
+    if (dt > 0) this._inert *= Math.exp(-dt / (this._tau || 0.08));
+    if (this._inert < 0.025) { this._inert = 0; this._frozen = null; return; }
+    const w = this._inert, iq = this._iq;
+    for (const n in this._frozen) {
+      const b = this.bones[n]; if (!b) continue;
+      iq[0].copy(this._frozen[n]).multiply(iq[1].copy(b.quaternion).invert());
+      iq[2].identity().slerp(iq[0], w);
+      b.quaternion.premultiply(iq[2]);
+    }
+    if (this._frozenPos && this.bones.pelvis) {
+      const neu = this.bones.pelvis.position.clone();
+      this.bones.pelvis.position.lerpVectors(neu, this._frozenPos, w);
+    }
   }
   update(dt) {
     if (this.mixer) {
@@ -261,6 +288,7 @@ class Runner {
       if (b.neck_01) b.neck_01.scale.setScalar(1.0);
       for (const s of ['foot_l', 'foot_r']) if (b[s]) b[s].scale.setScalar(1.22);
       for (const s of ['hand_l', 'hand_r']) if (b[s]) b[s].scale.setScalar(1.12);
+      this.applyInert(dt);
     }
   }
 }
@@ -512,7 +540,10 @@ const SKILL_BONUS = 150, DODGE_WIN = 7.5, COMBO_WIN = 3.2;
 // (late dodges: the body leaves the old lane by ~0.45 of the lane width before the obstacle arrives, no clipping through it)
 function laneProg(sk, tt) {
   const t = tt !== undefined ? Math.min(sk.m.T, tt) : Math.min(1, sk.t) * sk.m.T, lp = laneAt(t, sk.m.lane);
-  if (!sk.ev) return lp; const tg = t / (sk.rate || 1), u = Math.min(1, tg / sk.ev);
+  // The roll-over keeps its captured lane curve: contact stays in the old lane, and t=T is the new lane center
+  // at any run speed. A late dodge still ends centered; the hitbox already uses the destination lane.
+  if (!sk.ev || sk.m.id === 'rollover') return lp;
+  const tg = t / (sk.rate || 1), u = Math.min(1, tg / sk.ev);
   return Math.max(lp, 0.55 * u * u * (3 - 2 * u));
 }
 function laneAt(t, k) {
@@ -655,17 +686,20 @@ function startLaneMove(d) {
   startRoll(d, threatAhead(P.lane - d));
 }
 function startRoll(d, th) {
-  if (SK.m && SK.t < 0.95) SK.prev = { m: SK.m, d: SK.d, t: SK.t, fade: SK.fade > 0 ? SK.fade : 1 };
+  if (hero) hero.freeze(0.06);
+  SK.prev = null;
   beginMove();
-  SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false;
-  // Late dodge: the body still has to clear the old lane. The move stays the roll-over.
+  SK.m = mocapOn() ? ROLLOVER_MC : ROLLOVER; SK.lock = {}; SK.rate = 1; SK.d = d; SK.t = 0; SK.fade = 0; SK.skill = false; SK._exit = false;
+  // The sole is shifted onto the ball where it actually is (old lane), then the captured path carries it across.
+  const ox = Math.max(-0.35, Math.min(0.35, BS.p.x - B0[0])), oz = Math.max(-0.35, Math.min(0.35, BS.p.z - B0[2]));
+  SK.ballOff = new THREE.Vector3(ox, 0, oz);
   SK.ev = th && th.o ? Math.max(0.08, th.tti * 0.75) : 0;
   SK.rolls = (SK.rolls || 0) + 1;
   const o = th && th.o;
   if (o && !o.userData.beaten) { o.userData.beaten = true; P.beaten = (P.beaten || 0) + 1; }
 }
 const SK = { prev: null, m: null, d: 1, t: 0, w: 0, fade: 0, last: -1, combo: 0, comboT: 0, fov: 0, count: {} };
-function cancelSkill() { if (SK.m && SK.fade === 0) { SK.fade = 1; if (P.laneT < 1) { P.fromX = P.x; P.laneT = 0; } } }
+function cancelSkill() { if (SK.m) { SK.m = null; SK.prev = null; SK.fade = 0; if (P.laneT < 1) { P.fromX = P.x; P.laneT = 0; } } }
 const _q = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _fq = new THREE.Quaternion(), _e = new THREE.Euler(), _yq = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0);
 function rotFrame(bone, x, y, z) {
   // apply rotation (in character frame) to bone, keeping hierarchy: local = P^-1 * F*R*F^-1 * P * local
@@ -811,6 +845,112 @@ function ikLeg(side, target, footQ, hint) {
   aimBone(ca, _b.subVectors(_F, _K), _c.subVectors(Tc, _K));
   ca.getWorldQuaternion(_q2); fo.quaternion.copy(_q2.invert().multiply(footQ)); fo.updateMatrixWorld(true);
 }
+// Sample the jog once so a landing, slide, or roll-over can re-enter on the matching step.
+function bakeJog() {
+  if (!hero || !hero.actions || !hero.actions.Jog_Fwd_Loop || hero._jogBake) return;
+  const a = hero.actions.Jog_Fwd_Loop, dur = a.getClip().duration, N = 32;
+  const quats = {}; for (const n in hero.bones) quats[n] = hero.bones[n].quaternion.clone();
+  const pel = hero.bones.pelvis ? hero.bones.pelvis.position.clone() : null;
+  const prev = hero.current;
+  if (prev && prev !== a) prev.setEffectiveWeight(0);
+  a.enabled = true; a.setEffectiveWeight(1); a.play();
+  const bake = []; let vSum = 0, vN = 0, pL = null, pR = null;
+  for (let i = 0; i < N; i++) {
+    a.time = dur * i / N; hero.mixer.update(0); hero.group.updateMatrixWorld(true);
+    const L = hero.bones.foot_l.getWorldPosition(new THREE.Vector3());
+    const R = hero.bones.foot_r.getWorldPosition(new THREE.Vector3());
+    hero.group.worldToLocal(L); hero.group.worldToLocal(R);
+    if (pL) {
+      const dt = dur / N;
+      for (const [p, q] of [[L, pL], [R, pR]]) {
+        if (p.y < 0.2 && q.y < 0.2) { const vz = (p.z - q.z) / dt; if (vz > 0.4) { vSum += vz; vN++; } }
+      }
+    }
+    pL = L; pR = R; bake.push({ t: a.time, l: L.clone(), r: R.clone() });
+  }
+  hero._jogBake = bake; hero._footV = vN ? vSum / vN : 5.45;
+  a.setEffectiveWeight(prev === a ? 1 : 0);
+  if (prev && prev !== a) { prev.setEffectiveWeight(1); prev.play(); }
+  hero.mixer.update(0);
+  for (const n in quats) hero.bones[n].quaternion.copy(quats[n]);
+  if (pel && hero.bones.pelvis) hero.bones.pelvis.position.copy(pel);
+  hero.group.updateMatrixWorld(true);
+}
+function jogPhase() {
+  if (!hero._jogBake) bakeJog();
+  const L = hero.bones.foot_l.getWorldPosition(new THREE.Vector3());
+  const R = hero.bones.foot_r.getWorldPosition(new THREE.Vector3());
+  hero.group.worldToLocal(L); hero.group.worldToLocal(R);
+  let best = hero._jogBake[0], score = 1e9;
+  for (const p of hero._jogBake) { const s = p.l.distanceTo(L) + p.r.distanceTo(R); if (s < score) { score = s; best = p; } }
+  return best.t;
+}
+function jogCadence() {
+  if (window.__jogOff) return 1.1 + S.speed / 40;
+  const v1 = (hero && hero._footV) || 5.45;
+  // Sprint-leaning cadence. Stride IK covers the rest without leaving the v17 jog.
+  return Math.max(1.55, Math.min(2.55, S.speed / (v1 * 1.15)));
+}
+function syncJogPhase(tau = 0.1) {
+  if (!hero || !hero.actions || !hero.actions.Jog_Fwd_Loop) return;
+  const phase = jogPhase();
+  hero.freeze(tau);
+  const a = hero.actions.Jog_Fwd_Loop;
+  if (hero.current && hero.current !== a) hero.current.setEffectiveWeight(0);
+  a.enabled = true; a.timeScale = jogCadence(); a.time = phase; a.setEffectiveWeight(1); a.play();
+  hero.current = a; hero.currentName = 'Jog_Fwd_Loop';
+}
+// Cadence up toward a sprint, a slightly longer stride, a small hip drop, and a ground lock on the planted foot.
+function jogMatch(dt) {
+  if (window.__jogOff || !hero || !hero.bones.foot_l || !hero.bones.pelvis || dt <= 0) return;
+  // While a landing or roll is still blending out, leave the feet on that blend.
+  if (SK.m || P.slideT > 0 || !P.grounded || hero.currentName !== 'Jog_Fwd_Loop' || (hero._inert || 0) > 0.4) { hero._raw = null; return; }
+  const b = hero.bones, ts = hero.current.timeScale || 1;
+  const animated = (hero._footV || 5.45) * ts;
+  let stride = S.speed / Math.max(0.5, animated);
+  stride = Math.max(1, Math.min(1.18, stride));
+  const drop = Math.min(0.032, 0.02 + 0.05 * (stride - 1));
+  hero.group.updateMatrixWorld(true);
+  const hip = b.pelvis.getWorldPosition(new THREE.Vector3());
+  const feet = {};
+  hero._raw = hero._raw || {};
+  const blend = 1 - Math.min(1, hero._inert || 0);
+  for (const s of SIDES) {
+    const p = b['foot_' + s].getWorldPosition(new THREE.Vector3());
+    const rawZ = p.z, rawX = p.x, rawY = p.y;
+    const prev = hero._raw[s];
+    const swing = hip.z + (rawZ - hip.z) * stride;
+    // Keep the stride change inside what the leg can actually reach.
+    let z = rawZ + Math.max(-0.06, Math.min(0.06, (swing - rawZ) * blend));
+    let x = rawX;
+    if (prev && rawY < 0.11) x = rawX + Math.max(-0.04, Math.min(0.04, (prev.x - rawX) * blend));
+    p.z = z; p.x = x;
+    hero._raw[s] = { x, y: rawY, rawZ, outZ: z };
+    feet[s] = p;
+  }
+  b.pelvis.position.y -= drop * blend;
+  hero.group.updateMatrixWorld(true);
+  hero.group.getWorldQuaternion(_gq);
+  for (const s of SIDES) {
+    b['foot_' + s].getWorldQuaternion(_tq[s]);
+    _hint[s].set(0, 0.25, -1).applyQuaternion(_gq);
+    ikLeg(s, feet[s], _tq[s], _hint[s]);
+  }
+}
+// Spine leans with lateral acceleration. The head yaws as soon as the lane change starts, before the torso.
+function poseLean(dt) {
+  if (!hero || !hero.bones || !hero.bones.spine_02 || dt < 0) return;
+  if (dt <= 0) return;
+  const vx = (P.x - (hero._px || P.x)) / dt;
+  const ax = (vx - (hero._pv || 0)) / dt;
+  hero._px = P.x; hero._pv = vx;
+  const dir = (SK.m && SK.fade === 0) ? SK.d : (P.laneT < 1 ? Math.sign(P.toX - P.fromX) : 0);
+  const head = dir * ((SK.m && SK.fade === 0) ? 0.32 : 0.22);
+  const roll = Math.max(-0.18, Math.min(0.18, -ax * 0.01));
+  const yaw = dir * 0.1;
+  rotFrame(hero.bones.spine_02, 0, yaw, roll);
+  if (hero.bones.neck_01) rotFrame(hero.bones.neck_01, 0, head, 0);
+}
 const _gq = new THREE.Quaternion(), _tw = { l: new THREE.Vector3(), r: new THREE.Vector3() }, _tq = { l: new THREE.Quaternion(), r: new THREE.Quaternion() }, _hint = { l: new THREE.Vector3(), r: new THREE.Vector3() };
 const _jp = new THREE.Vector3(), _jq = new THREE.Quaternion(), _mp = new THREE.Vector3(), _mq = new THREE.Quaternion(), _bw = new THREE.Vector3(), _np = new THREE.Vector3();
 // called after the mixer update each frame: the current move (+ an interrupted one fading out), feet IK, ball
@@ -826,9 +966,8 @@ function driveMocap() {
     const a = hero.actions[k]; if (!a) continue;
     const mine = on && (k === 'Rollover_L') === (SK.d < 0);
     if (mine) {
-      const T = m.T, t = Math.min(1, SK.t) * T;
-      // Ease the captured body in over ~0.16s (full through the rest of the sole contact) and out over the 0.2s fade.
-      w = Math.min(ease01(t / 0.16), SK.fade > 0 ? SK.fade : 1);
+      // Full weight on the swipe frame. The frozen jog pose decays in Runner.applyInert instead of a crossfade.
+      w = SK.fade > 0 ? 0 : 1;
       // v10 playback: the captured body plays straight through the clip. The feet stay on the contact warp.
       if (!a.isRunning()) { a.reset(); a.play(); } a.timeScale = 0; a.time = Math.min(1, SK.t) * a.getClip().duration; a.setEffectiveWeight(w);
     } else if (a.isRunning()) a.stop();
@@ -976,6 +1115,7 @@ function applySkillPose(dt) {
   hero.group.updateMatrixWorld(true);
   hero.group.getWorldQuaternion(_gq);
   const b = hero.bones;
+  poseLean(dt);
   if (list.length) {
     _fq.copy(_gq).multiply(_yq.setFromAxisAngle(_Y, spin));
     // upper-body layers (mirrored: for d=-1 the right-side channel drives the left side and y/z rotations negate)
@@ -1001,6 +1141,7 @@ function applySkillPose(dt) {
       for (const sk of list) {
         const w = moveW(sk); if (w <= 0) continue; const t = Math.min(1, sk.t) * sk.m.T;
         footTargetG(sk.m, sk.d, s, t, _mp);
+        if (sk === SK && sk.m.id === 'rollover' && s === mcRollSide(sk.m, sk.d) && SK.ballOff) _mp.add(SK.ballOff);
         if (sk.m.mc && sk.fade === 0 && s !== mcRollSide(sk.m, sk.d) && !mcOwns(sk.m, sk.d, s)) {
           // Support foot grips the turf while the sole is on the ball, then eases off over ~0.08s.
           sk.lock = sk.lock || {}; let L = sk.lock[s];
@@ -1147,7 +1288,7 @@ function updatePlay(dt, rdt = dt) {
   S.speed = Math.min(MAX_SPEED, S.speed + ACCEL * dt * (S.speed < 20 ? 1.4 : 0.8));
   const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30);
   // move clock first, so the body's lane position and the pose/ball solved this frame use the same move time
-  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.2; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt * (SK.rate || 1) / SK.m.T; if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } SK.fade = 1; } } }
+  if (SK.m) { if (SK.fade > 0) { SK.fade -= dt / 0.2; if (SK.fade <= 0) SK.m = null; } else { SK.t += dt * (SK.rate || 1) / SK.m.T; if (SK.t >= 1) { if (SK.m.lane) { P.x = P.toX; P.laneT = 1; } if (!SK._exit) { SK._exit = true; syncJogPhase(0.1); } SK.fade = 1; } } }
   // lanes
   if (SK.m && SK.fade === 0 && SK.m.lane && P.laneT < 1) {
     // skill moves travel across THROUGH the move: lateral position follows the move's own lane curve
@@ -1158,15 +1299,14 @@ function updatePlay(dt, rdt = dt) {
     P.x = P.fromX + (P.toX - P.fromX) * easeOut(P.laneT);
   }
   // vertical
-  if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') hero.play('Jog_Fwd_Loop', 0.12, 1.1 + S.speed / 40); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
+  if (!P.grounded) { P.vy -= GRAV * dt; P.y += P.vy * dt; if (P.y <= 0) { P.y = 0; P.vy = 0; P.grounded = true; P.sinceGround = 0; if (P.buffer !== 'down') syncJogPhase(0.16); } else if (P.vy < 2 && hero.currentName === 'Jump_Start') hero.play('Jump_Loop', 0.15, 1); }
   else P.sinceGround += dt;
-  if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) hero.play('Jog_Fwd_Loop', 0.15, 1.1 + S.speed / 40); }
+  if (P.slideT > 0) { P.slideT -= dt; if (P.slideT <= 0) { P.slideT = 0; syncJogPhase(0.16); } }
   if (P.buffer) { if (!BS.air) P.bufferT -= rdt; if (P.bufferT <= 0) P.buffer = null; else tryBuffered(); }
-  if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = 1.1 + S.speed / 40;
+  if (hero.currentName === 'Jog_Fwd_Loop') hero.current.timeScale = jogCadence();
   hero.group.position.set(P.x, P.y, 0);
-  // lean into lane change
-  const lean = SK.m && SK.m.id === 'rollover' && SK.fade === 0 ? -SK.d * 0.24 * Math.sin(Math.PI * Math.min(1, SK.t)) : P.laneT < 1 && !SK.m ? (P.toX - P.fromX) * -0.06 * (1 - P.laneT) : 0;
-  hero.group.rotation.z += (lean - hero.group.rotation.z) * Math.min(1, dt * 20);
+  // No whole-body roll: that lifts the feet. Lean lives on the spine, and the head turns first.
+  hero.group.rotation.z += (0 - hero.group.rotation.z) * Math.min(1, dt * 14);
 
   // move world
   for (const c of chunks) { c.position.z += dz; if (c.position.z > CHUNK * 1.5) c.position.z -= CHUNK * chunks.length; }
@@ -1206,7 +1346,7 @@ function frame() {
   const dt = rdt * SM.g; // global game time scale (slow-mo)
   if (S.state === 'play') updatePlay(dt, rdt);
   if (S.state === 'over') { for (const o of obstacles) if (o.userData.type === 'rival') o.userData.runner.update(dt); }
-  if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') applySkillPose(dt); }
+  if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') { applySkillPose(dt); jogMatch(dt); } }
   updateFX(dt, S.state === 'play' ? S.speed * dt : 0);
   if (SK.fov > 0.01) SK.fov *= Math.exp(-rdt * 9);
   const fov0 = innerWidth / innerHeight < 0.75 ? 72 : 62; if (Math.abs(camera.fov - fov0 - SK.fov) > 0.01) { camera.fov = fov0 + SK.fov; camera.updateProjectionMatrix(); }
@@ -1247,6 +1387,7 @@ window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_"
   scene.add(hero.group);
   footBall = new THREE.Mesh(new THREE.SphereGeometry(BR, 18, 14), new THREE.MeshStandardMaterial({ map: ballTex, roughness: .4 })); footBall.castShadow = true; footBall.position.set(...B0); hero.group.add(footBall); initFX();
   hero.play('Idle_Loop', 0);
+  bakeJog();
   $('tBest').textContent = S.best;
   if (loadError) { $('warn').textContent = loadError; show('warn', true); }
   show('loading', false); show('title', true); S.state = 'title';
