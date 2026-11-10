@@ -11,6 +11,8 @@ Fan-made game themed on Chicago Fire FC club colors. Not affiliated with or endo
 
 Kit (red shirt, white collar/sleeve trim, white "10", navy shorts, red/white socks, dark boots) is painted at runtime by a shader in main.js — no third-party art.
 
+The jog's cadence, stride, and planted foot are adjusted in code so the foot stays with the grass. Transitions use a dead blend (the new clip plays immediately and the previous pose fades) instead of a crossfade. No Epic Games or Game Animation Sample assets are used.
+
 ## Lane change
 
 Every lane change is the sole roll-over. The upper body is the retargeted clip already in `assets/rollover.glb` (in the repo since v10). The seven skill moves and their clips (chop, step-over, roulette, elastico, croqueta, heel-to-heel, rainbow) are not used. The run stays the CC0 Quaternius jog.
