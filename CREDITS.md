@@ -11,9 +11,9 @@ Fan-made game themed on Chicago Fire FC club colors. Not affiliated with or endo
 
 Kit (red shirt, white collar/sleeve trim, white "10", navy shorts, red/white socks, dark boots) is painted at runtime by a shader in main.js — no third-party art.
 
-## Skill-move animations (lane changes)
+## Lane change
 
-All seven skill moves (Roulette, Ronaldo Chop, Elastico, Step-over/Half Scissor, La Croqueta, Rainbow Flick, Heel-to-Heel) are **hand-authored keyframes in main.js** (`MOVES`), layered over the CC0 Quaternius jog cycle at runtime. No third-party motion data is used.
+Every lane change is the sole roll-over. The upper body is the retargeted clip already in `assets/rollover.glb` (in the repo since v10). The seven skill moves and their clips (chop, step-over, roulette, elastico, croqueta, heel-to-heel, rainbow) are not used. The run stays the CC0 Quaternius jog.
 
 Free motion sources reviewed (Nov 2026) and not used:
 - CMU Graphics Lab Motion Capture Database (free, no restrictions; http://mocap.cs.cmu.edu, BVH by cgspeed) — only soccer *kicks* (subjects 10/11), no dribbling skill moves.
