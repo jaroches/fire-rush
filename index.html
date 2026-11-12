@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#c8102e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Fire Rush</title>
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/jsm/"}}</script>
 </head><body>
 <canvas id="c"></canvas>
@@ -26,7 +26,7 @@
   <p class="sub">Chicago street-soccer endless runner</p></div>
   <div class="top" style="gap:12px">
   <button id="startBtn">TAP TO PLAY</button>
-  <p class="help mob">Every lane change is a sole roll-over.<br>◀ ▶ or swipe ← → lanes · ↑ JUMP · ↓ SLIDE<br>The sole rolls the ball across into the new lane.</p>
+  <p class="help mob">Every lane change is a sole roll-over.<br>◀ ▶ or swipe ← → lanes · ↑ JUMP · ↓ SLIDE<br>A tunnel opens onto a penalty. Swipe to place the shot.</p>
   <p class="help desk">← → / A D: sole roll-over into the next lane · ↑ W Space jump · ↓ S slide<br>Left takes the right sole. Right takes the left sole.</p>
   <p class="best">Best: <b id="tBest">0</b></p>
   <p id="warn" class="warn hidden"></p></div>
@@ -37,11 +37,12 @@
   <button class="tb jump" data-a="up"><span>▲<br><small>JUMP</small></span></button></div>
 </div>
 <div id="popup"></div>
+<div id="pen" class="hidden"></div>
 <div id="over" class="overlay hidden">
   <h2>TACKLED!</h2>
   <div class="stats"><div><small>SCORE</small><b id="oScore">0</b></div><div><small>BALLS</small><b id="oBalls">0</b></div><div><small>DISTANCE</small><b id="oDist">0</b></div></div>
   <p class="best" id="oBest">Best: 0</p>
   <button id="againBtn">PLAY AGAIN</button>
 </div>
-<script type="module" src="main.js?v=21"></script>
+<script type="module" src="main.js?v=22"></script>
 </body></html>

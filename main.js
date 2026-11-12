@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { createPenalty } from './penalty.js';
 
 // ---------- constants ----------
 const LANES = [-2.2, 0, 2.2];
@@ -428,6 +429,7 @@ function resetGame() {
   Object.assign(S, { speed: START_SPEED, dist: 0, score: 0, ballsN: 0, t: 0, nextSpawn: 26 });
   Object.assign(P, { lane: 1, fromX: 0, toX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, sinceGround: 0, slideT: 0, buffer: null, beaten: 0 });
   SK.m = null; SK.prev = null; SK.combo = 0; SK.comboT = -9; SM.g = 1; SM.t = SM.delay = -1;
+  if (typeof penalty !== 'undefined') penalty.reset();
   hero.group.position.set(0, 0, 0); hero.group.rotation.set(0, 0, 0); BS.p.set(...B0); BS.v.set(0, 0, 0); BS.lastX = 0; BS.wx = 0; BS.vz = 0; BS.phys = false; BS.rel = null; BS.gather = null; BS.gT = 0; BS.air = false; BS.vy = 0; BS.hist = null; _fcp.l = _fcp.r = null;
 }
 
@@ -454,6 +456,14 @@ function act(a) {
   if (S.state === 'title') { if (a === 'tap' || a) startGame(); return; }
   if (S.state === 'over') return;
   if (S.state !== 'play') return;
+  if (penalty.blocksInput()) {
+    if (penalty.aiming() && (a === 'left' || a === 'right' || a === 'up' || a === 'down')) {
+      const dx = a === 'left' ? -160 : a === 'right' ? 160 : 24;
+      const dy = a === 'up' ? -190 : a === 'down' ? 36 : -30;
+      penalty.shoot(dx, dy, 0.1);
+    }
+    return;
+  }
   P.buffer = a; P.bufferT = BUFFER_T; tryBuffered();
 }
 function tryBuffered() {
@@ -482,12 +492,33 @@ addEventListener('keydown', (e) => {
   if (a) { e.preventDefault(); if (S.state === 'over' && a === 'tap') startGame(); else act(a); }
 });
 let tStart = null;
-canvas.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; tStart = { x: t.clientX, y: t.clientY, done: false }; }, { passive: true });
+canvas.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; tStart = { x: t.clientX, y: t.clientY, done: false, t0: performance.now() }; }, { passive: true });
 canvas.addEventListener('touchmove', (e) => {
   if (!tStart || tStart.done) return; const t = e.changedTouches[0]; const dx = t.clientX - tStart.x, dy = t.clientY - tStart.y;
+  tStart.lx = t.clientX; tStart.ly = t.clientY;
+  if (penalty.blocksInput()) return;
   if (Math.hypot(dx, dy) > 28) { tStart.done = true; act(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up')); }
 }, { passive: true });
-canvas.addEventListener('touchend', () => { if (tStart && !tStart.done && S.state === 'title') startGame(); tStart = null; }, { passive: true });
+canvas.addEventListener('touchend', (e) => {
+  if (tStart && penalty.blocksInput()) {
+    const t = e.changedTouches[0];
+    const x1 = t ? t.clientX : (tStart.lx != null ? tStart.lx : tStart.x);
+    const y1 = t ? t.clientY : (tStart.ly != null ? tStart.ly : tStart.y);
+    penalty.swipe(tStart.x, tStart.y, x1, y1, tStart.t0 || performance.now(), performance.now());
+    tStart = null; return;
+  }
+  if (tStart && !tStart.done && S.state === 'title') startGame(); tStart = null;
+}, { passive: true });
+let penPtr = null;
+canvas.addEventListener('pointerdown', (e) => {
+  if (!penalty.aiming() || e.pointerType === 'touch') return;
+  penPtr = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (!penPtr || e.pointerId !== penPtr.id) return;
+  penalty.swipe(penPtr.x, penPtr.y, e.clientX, e.clientY, penPtr.t, performance.now());
+  penPtr = null;
+});
 document.getElementById('startBtn').addEventListener('click', () => startGame());
 document.getElementById('againBtn').addEventListener('click', () => startGame());
 document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
@@ -1283,8 +1314,12 @@ addEventListener('resize', resize); resize();
 
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
+function scrollWorld(dz) {
+  for (const c of chunks) { c.position.z += dz; if (c.position.z > CHUNK * 1.5) c.position.z -= CHUNK * chunks.length; }
+}
 function updatePlay(dt, rdt = dt) {
   S.t += dt;
+  if (penalty.consume()) { penalty.update(dt); return; }
   S.speed = Math.min(MAX_SPEED, S.speed + ACCEL * dt * (S.speed < 20 ? 1.4 : 0.8));
   const dz = S.speed * dt; S.dist += dz; S.score += dz * (1 + S.speed / 30);
   // move clock first, so the body's lane position and the pose/ball solved this frame use the same move time
@@ -1309,7 +1344,7 @@ function updatePlay(dt, rdt = dt) {
   hero.group.rotation.z += (0 - hero.group.rotation.z) * Math.min(1, dt * 14);
 
   // move world
-  for (const c of chunks) { c.position.z += dz; if (c.position.z > CHUNK * 1.5) c.position.z -= CHUNK * chunks.length; }
+  scrollWorld(dz);
   S.nextSpawn -= dz;
   if (S.nextSpawn <= 0) { spawnRow(-110); S.nextSpawn = Math.max(14, 30 - S.speed * 0.45) + Math.random() * 8; }
 
@@ -1346,7 +1381,7 @@ function frame() {
   const dt = rdt * SM.g; // global game time scale (slow-mo)
   if (S.state === 'play') updatePlay(dt, rdt);
   if (S.state === 'over') { for (const o of obstacles) if (o.userData.type === 'rival') o.userData.runner.update(dt); }
-  if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') { applySkillPose(dt); jogMatch(dt); } }
+  if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') { applySkillPose(dt); jogMatch(dt); penalty.pose(dt); } }
   updateFX(dt, S.state === 'play' ? S.speed * dt : 0);
   if (SK.fov > 0.01) SK.fov *= Math.exp(-rdt * 9);
   const fov0 = innerWidth / innerHeight < 0.75 ? 72 : 62; if (Math.abs(camera.fov - fov0 - SK.fov) > 0.01) { camera.fov = fov0 + SK.fov; camera.updateProjectionMatrix(); }
@@ -1366,6 +1401,7 @@ function frame() {
     if (shake > 0) { shake -= dt; camera.position.x += (Math.random() - .5) * shake * .5; camera.position.y += (Math.random() - .5) * shake * .5; }
     camLook.set(P.x * 0.8, 1.25 + P.y * 0.3, -7); camera.lookAt(camLook);
     if (window.__camLow) { camera.position.set(P.x + 0.9, 0.75, 2.3); camera.lookAt(P.x - 0.1, 0.25, -0.6); } // test/render hook only (game camera unchanged)
+    else penalty.applyCam(dt);
   }
   if (S.state !== 'title') faceL.intensity = 0;
   sunL.position.set(P.x - 6, 14, -6); sunL.target.position.set(P.x, 0, -4);
@@ -1377,12 +1413,19 @@ function frame() {
 window.__spawnObstacleAhead = (type = 'barrier', z = -6) => { const o = get(type); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return o; };
 window.__spawnRivalAhead = (z = -4) => { const o = get("rival"); o.position.set(LANES[P.lane], 0, z); o.userData.lane = P.lane; o.userData.beaten = false; o.visible = true; obstacles.push(o); return (window.__lastObs = o); };
 window.__cam = camera;
-window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame };
+const penalty = createPenalty({
+  THREE, scene, camera, camLook, S, P, BS, obstacles, airStep, popup, cancelSkill, scroll: scrollWorld, release, GRAV, BR,
+  jogCadence, syncJog: syncJogPhase, ikLeg, getHero: () => hero,
+  baseFov: () => innerWidth / innerHeight < 0.75 ? 72 : 62,
+  scratch: { q: new THREE.Quaternion(), axis: new THREE.Vector3(), v: new THREE.Vector3(), v2: new THREE.Vector3() }
+});
+window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame, penalty };
 
 (async () => {
   await loadAssets();
   barFill.style.width = '100%';
   hero = new Runner(HERO_KIT, true);
+  penalty.attachKeeper(new Runner({ shirt: COLORS.navy, trim: COLORS.red, shorts: COLORS.white, sock: COLORS.red, boot: 0x15161c, stud: 0xf4f4f4, numTex: numberTex('1', '#ffffff') }, false));
   // hero faces the camera on the title screen for the showcase
   scene.add(hero.group);
   footBall = new THREE.Mesh(new THREE.SphereGeometry(BR, 18, 14), new THREE.MeshStandardMaterial({ map: ballTex, roughness: .4 })); footBall.castShadow = true; footBall.position.set(...B0); hero.group.add(footBall); initFX();
