@@ -187,8 +187,9 @@ const RIVAL_KIT = { shirt: 0x7fc4ff, trim: 0x0b1f4d, shorts: 0xffffff, sock: 0x0
 
 async function loadAssets() {
   try {
-    const [hero, anims, hair, roll] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=21').catch(e => { console.warn('mocap roll-over clip missing', e); return null; })]);
+    const [hero, anims, hair, roll, kick, keep] = await Promise.all([loadGLB('assets/hero.glb'), loadGLB('assets/anims.glb'), loadGLB('assets/hair.glb'), loadGLB('assets/rollover.glb?v=21').catch(e => { console.warn('mocap roll-over clip missing', e); return null; }), loadGLB('assets/penalty.glb?v=23').catch(e => { console.warn('penalty kick clip missing', e); return null; }), loadGLB('assets/keeper.glb?v=23').catch(e => { console.warn('keeper clips missing', e); return null; })]);
     if (roll) anims.animations.push(...roll.animations);
+    for (const glb of [kick, keep]) if (glb) anims.animations.push(...glb.animations);
     const root = hero.scene;
     root.updateMatrixWorld(true);
     let head = null; root.traverse(o => { if (o.isBone && o.name === 'Head') head = o; });
@@ -1070,6 +1071,7 @@ function ballRoll(dt, lat) {
 }
 function capsuleAt(s, out0, out1) { const a = BS.subA; out0.lerpVectors(_fcp[s][0], _fc[s][0], a); out1.lerpVectors(_fcp[s][1], _fc[s][1], a); }
 function ballStep(dt, lat, now) {
+  if (BS.penHold) return;
   if (BS.air) { // flight / bounce (rainbow): no foot contact, no gather until it is back on the grass
     const st = { x: BS.p.x, y: BS.p.y, z: BS.p.z, wx: BS.wx, vz: BS.vz, vy: BS.vy, w: BS.w, air: true, bounces: 0 };
     airStep(st, dt, S.speed); BS.p.set(st.x - lat, st.y, st.z); BS.wx = st.wx; BS.vz = st.vz; BS.vy = st.vy; BS.w = st.w; BS.air = st.air;
@@ -1405,7 +1407,7 @@ function frame() {
   }
   if (S.state !== 'title') faceL.intensity = 0;
   sunL.position.set(P.x - 6, 14, -6); sunL.target.position.set(P.x, 0, -4);
-  renderer.render(scene, camera);
+  if (!penalty.render(renderer, scene)) renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 
@@ -1415,7 +1417,7 @@ window.__spawnRivalAhead = (z = -4) => { const o = get("rival"); o.position.set(
 window.__cam = camera;
 const penalty = createPenalty({
   THREE, scene, camera, camLook, S, P, BS, obstacles, airStep, popup, cancelSkill, scroll: scrollWorld, release, GRAV, BR,
-  jogCadence, syncJog: syncJogPhase, ikLeg, getHero: () => hero,
+  jogCadence, syncJog: syncJogPhase, ikLeg, getHero: () => hero, getBall: () => footBall,
   baseFov: () => innerWidth / innerHeight < 0.75 ? 72 : 62,
   scratch: { q: new THREE.Quaternion(), axis: new THREE.Vector3(), v: new THREE.Vector3(), v2: new THREE.Vector3() }
 });
@@ -1425,7 +1427,7 @@ window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_"
   await loadAssets();
   barFill.style.width = '100%';
   hero = new Runner(HERO_KIT, true);
-  penalty.attachKeeper(new Runner({ shirt: COLORS.navy, trim: COLORS.red, shorts: COLORS.white, sock: COLORS.red, boot: 0x15161c, stud: 0xf4f4f4, numTex: numberTex('1', '#ffffff') }, false));
+  penalty.attachKeeper(new Runner({ shirt: 0x18a34a, trim: 0xf4f7fb, shorts: 0x10140f, sock: 0xf4f7fb, boot: 0x111111, stud: 0xf4f7fb, numTex: numberTex('1', '#ffffff') }, false));
   // hero faces the camera on the title screen for the showcase
   scene.add(hero.group);
   footBall = new THREE.Mesh(new THREE.SphereGeometry(BR, 18, 14), new THREE.MeshStandardMaterial({ map: ballTex, roughness: .4 })); footBall.castShadow = true; footBall.position.set(...B0); hero.group.add(footBall); initFX();

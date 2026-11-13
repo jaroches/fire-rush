@@ -17,6 +17,8 @@ The jog's cadence, stride, and planted foot are adjusted in code so the foot sta
 
 Every lane change is the sole roll-over. The upper body is the retargeted clip already in `assets/rollover.glb` (in the repo since v10). The seven skill moves and their clips (chop, step-over, roulette, elastico, croqueta, heel-to-heel, rainbow) are not used. The run stays the CC0 Quaternius jog.
 
+The penalty strike (`assets/penalty.glb`) and the goalkeeper set (`assets/keeper.glb`: idle, dive left, dive right, catch, scoop, plus an unused fist-pump) are Mixamo clips — Penalty Kick, Goalkeeper Idle, Goalkeeper Diving Save Left/Right, Goalkeeper Catch, Goalkeeper Scoop, Fist Pump — retargeted onto this UAL rig in Blender the same way as the roll-over (bone-direction swing, pelvis root motion kept). The raw FBX files are not in the repo. Mixamo animations are used here at the project owner's request; Adobe's terms restrict redistribution of the unmodified files.
+
 Free motion sources reviewed (Nov 2026) and not used:
 - CMU Graphics Lab Motion Capture Database (free, no restrictions; http://mocap.cs.cmu.edu, BVH by cgspeed) — only soccer *kicks* (subjects 10/11), no dribbling skill moves.
 - Anderson Rohr "Free mocap pack 05: Soccer" (gumroad; free incl. commercial, no redistribution as standalone pack) — dribbles/juggles/kicks only, no skill moves; Rokoko/UE5 skeleton.
