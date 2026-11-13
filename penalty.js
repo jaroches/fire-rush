@@ -29,7 +29,7 @@ export function createPenalty(api) {
   }
   const ribbon = [];
   for (let i = 0; i < 10; i++) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffffff : 0x7ecbff, transparent: true, opacity: 0, depthWrite: false }));
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffffff : 0x7ecbff, transparent: true, opacity: 0, depthWrite: false }));
     m.visible = false; api.scene.add(m); ribbon.push({ m, p: new THREE.Vector3() });
   }
   const buf = new THREE.Vector2();
@@ -299,6 +299,10 @@ export function createPenalty(api) {
       if (ball) ball.position.copy(BS.p);
     }
     const ball = api.getBall();
+    if (ball) {
+      const big = pen.phase === 'flight' || pen.phase === 'netcam' || pen.phase === 'result';
+      ball.scale.setScalar(big ? 1.9 : 1);
+    }
     if (pen.shot && !pen.frozen && ball) {
       ball.getWorldPosition(api.scratch.v2);
       for (let i = ribbon.length - 1; i > 0; i--) ribbon[i].p.copy(ribbon[i - 1].p);
@@ -310,54 +314,109 @@ export function createPenalty(api) {
     } else if (!pen.shot) for (const q of ribbon) q.m.visible = false;
   }
 
+  // Vertical fov that fits a world box at `dist`, for the viewport's width/height.
+  // Portrait phones are narrow, so the goal's width usually sets the lens.
+  function fovFor(dist, halfW, halfH, aspect, pad) {
+    const a = Math.max(0.35, aspect);
+    const d = Math.max(0.4, dist);
+    const p = pad || 1;
+    const fromH = 2 * Math.atan((halfH * p) / d) * 180 / Math.PI;
+    const fromW = 2 * Math.atan((halfW * p) / (d * a)) * 180 / Math.PI;
+    return Math.min(108, Math.max(fromH, fromW));
+  }
+
   function cut(camera, camLook, pos, look, fov) {
     camera.position.set(pos[0], pos[1], pos[2]);
     camLook.set(look[0], look[1], look[2]);
     camera.lookAt(camLook);
-    if (Math.abs(camera.fov - fov) > 0.4) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
   }
 
   function applyCam() {
-    if (pen.phase === 'off' || pen.phase === 'exit' || pen.phase === 'countdown' || window.__camLow) return;
-    const camera = api.camera, camLook = api.camLook, P = api.P;
-    if (pen.phase === 'approach') {
-      const u = pen.approachU;
-      camera.position.y += 0.45 * u;
-      camera.position.z += 0.35 * u;
-      camLook.y -= 0.35 * u;
-      camLook.z = -8;
-      camera.lookAt(camLook);
-      return;
+    // Approach uses the running chase camera exactly. Do not touch it.
+    if (pen.phase === 'off' || pen.phase === 'exit' || pen.phase === 'countdown' || pen.phase === 'approach' || window.__camLow) return;
+    const camera = api.camera, camLook = api.camLook;
+    const aspect = camera.aspect;
+    const B = api.BS, bx = B.p.x, by = Math.max(0.2, B.p.y), bz = B.p.z;
+    const hero = api.getHero();
+    if (pen.phase === 'runup') {
+      // Same wideness as the running lens. He sits in the lower third, goal above him.
+      const hx = hero ? hero.group.position.x : 0;
+      const pos = [hx + 0.12, 3.25, 5.5], look = [hx, 1.55, -8];
+      cut(camera, camLook, pos, look, Math.max(api.baseFov(), fovFor(Math.abs(pos[2] - GOAL_Z), GOAL_HW + 1.0, 2.4, aspect, 1.05)));
+    } else if (pen.phase === 'contact') {
+      // Medium low three-quarter on the player, so the whole body and the ball stay in frame.
+      const v = api.scratch.v;
+      if (hero && hero.bones && hero.bones.pelvis) hero.bones.pelvis.getWorldPosition(v);
+      else v.set(api.P.x, 0.9, 0);
+      const pos = [v.x + 2.15, 1.05, v.z + 3.5];
+      const look = [v.x, Math.max(0.55, v.y - 0.25), v.z - 0.15];
+      const dist = Math.hypot(pos[0] - look[0], pos[1] - look[1], pos[2] - look[2]);
+      cut(camera, camLook, pos, look, Math.max(api.baseFov(), fovFor(dist, 1.45, 1.25, aspect, 1.18)));
+    } else if (pen.phase === 'flight') {
+      // Sit just behind the ball and look at the goal, so a wide shot stays on screen.
+      const pos = [bx * 0.72, by + 0.9, bz + 3.1];
+      const look = [bx * 0.28, 1.2, GOAL_Z + 0.15];
+      const dist = Math.hypot(pos[0] - look[0], pos[1] - look[1], pos[2] - look[2]);
+      const halfW = Math.max(GOAL_HW + 0.8, Math.abs(bx) + GOAL_HW * 0.35);
+      cut(camera, camLook, pos, look, fovFor(dist, halfW, 2.4, aspect, 1.14));
+    } else if (pen.phase === 'netcam' || pen.phase === 'result') {
+      const pos = [0.25, 1.65, GOAL_Z - 7.4];
+      const look = [bx * 0.12, 1.15, -2.2];
+      const dist = Math.abs(pos[2] - GOAL_Z);
+      cut(camera, camLook, pos, look, fovFor(dist, GOAL_HW + 0.55, 2.15, aspect, 1.08));
     }
-    const B = api.BS, bx = B.p.x, by = Math.max(0.25, B.p.y), bz = B.p.z;
-    if (pen.phase === 'runup') cut(camera, camLook, [0.15, 1.85, 4.6], [0, 0.9, -2.2], 54);
-    else if (pen.phase === 'contact') cut(camera, camLook, [bx + 1.35, by + 0.35, bz + 1.45], [bx, by + 0.05, bz - 0.35], 40);
-    else if (pen.phase === 'flight') cut(camera, camLook, [bx + 2.8, by + 0.9, bz + 0.4], [bx, by, bz - 3.2], 46);
-    else if (pen.phase === 'netcam' || pen.phase === 'result') cut(camera, camLook, [0.25, 1.7, -13.9], [bx * 0.25, 1.15, -8.5], 50);
   }
 
   function render(renderer, scene) {
     if (pen.phase !== 'countdown') return false;
     const camera = api.camera;
+    const savedAspect = camera.aspect, savedFov = camera.fov;
     renderer.getDrawingBufferSize(buf);
     const w = buf.x, h = buf.y, mid = (h / 2) | 0;
+    const topH = h - mid, botH = mid;
     renderer.setScissorTest(true);
-    renderer.setViewport(0, mid, w, h - mid);
-    renderer.setScissor(0, mid, w, h - mid);
+    // Top half: the whole goal, keeper small inside it.
+    renderer.setViewport(0, mid, w, topH);
+    renderer.setScissor(0, mid, w, topH);
     burst.visible = false;
-    camera.position.set(0, 1.25, GOAL_Z + 5.4);
-    camera.lookAt(0, 1.05, GOAL_Z);
-    camera.fov = 30; camera.updateProjectionMatrix();
+    const topAspect = w / Math.max(1, topH);
+    const distG = 5.5;
+    camera.aspect = topAspect;
+    camera.position.set(0, 1.25, GOAL_Z + distG);
+    camera.lookAt(0, 1.12, GOAL_Z);
+    camera.fov = fovFor(distG, GOAL_HW + 0.85, 1.7, topAspect, 1.08);
+    camera.updateProjectionMatrix();
     renderer.render(scene, camera);
-    renderer.setViewport(0, 0, w, mid);
-    renderer.setScissor(0, 0, w, mid);
+    // Bottom half: full body, head to boots, on the sunburst.
+    renderer.setViewport(0, 0, w, botH);
+    renderer.setScissor(0, 0, w, botH);
+    const hero = api.getHero();
+    const hidden = [];
+    for (const o of scene.children) {
+      if (o === burst || (hero && o === hero.group) || o.isLight) continue;
+      if (!o.visible) continue;
+      hidden.push(o); o.visible = false;
+    }
     burst.visible = true;
-    camera.position.set(1.7, 0.92, 2.15);
-    camera.lookAt(0, 0.5, -0.15);
-    camera.fov = 40; camera.updateProjectionMatrix();
+    burst.position.set(0, 1.05, 1.7);
+    const botAspect = w / Math.max(1, botH);
+    const distP = 4.6;
+    camera.aspect = botAspect;
+    camera.position.set(0.2, 1.0, -distP);
+    camera.lookAt(0, 0.9, 0.05);
+    camera.fov = fovFor(distP, 1.25, 1.35, botAspect, 1.16);
+    camera.updateProjectionMatrix();
     renderer.render(scene, camera);
+    for (const o of hidden) o.visible = true;
+    stad.visible = true;
+    burst.position.set(0, 1.15, -1.35);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);
+    camera.aspect = savedAspect;
+    camera.fov = savedFov;
+    camera.updateProjectionMatrix();
     return true;
   }
 
@@ -394,16 +453,17 @@ export function createPenalty(api) {
 function makeBurst(THREE) {
   const c = document.createElement('canvas'); c.width = c.height = 256;
   const g = c.getContext('2d');
-  const grd = g.createRadialGradient(128, 128, 10, 128, 128, 128);
-  grd.addColorStop(0, '#8fd0ff'); grd.addColorStop(0.5, '#1a6fe0'); grd.addColorStop(1, '#08357a');
+  const grd = g.createRadialGradient(128, 128, 8, 128, 128, 128);
+  grd.addColorStop(0, '#d7f1ff'); grd.addColorStop(0.35, '#2f86f0'); grd.addColorStop(1, '#08357a');
   g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
-  g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 14;
-  for (let i = 0; i < 14; i++) {
-    const a = i / 14 * Math.PI * 2;
-    g.beginPath(); g.moveTo(128, 128); g.lineTo(128 + Math.cos(a) * 150, 128 + Math.sin(a) * 150); g.stroke();
+  for (let i = 0; i < 16; i++) {
+    const a = i / 16 * Math.PI * 2;
+    g.strokeStyle = i % 2 ? 'rgba(255,255,255,0.55)' : 'rgba(10,40,120,0.45)';
+    g.lineWidth = 18;
+    g.beginPath(); g.moveTo(128, 128); g.lineTo(128 + Math.cos(a) * 170, 128 + Math.sin(a) * 170); g.stroke();
   }
   const t = new THREE.CanvasTexture(c);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), new THREE.MeshBasicMaterial({ map: t, depthWrite: false }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 9.5), new THREE.MeshBasicMaterial({ map: t, depthWrite: false, side: THREE.DoubleSide }));
   m.position.set(0, 1.15, -1.35);
   return m;
 }
@@ -468,7 +528,7 @@ function buildStadium(THREE) {
 
   const netGeo = new THREE.PlaneGeometry(GOAL_HW * 2, GOAL_HH, 22, 12);
   const netMap = netTex(THREE);
-  const net = new THREE.Mesh(netGeo, new THREE.MeshBasicMaterial({ map: netMap, transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false }));
+  const net = new THREE.Mesh(netGeo, new THREE.MeshBasicMaterial({ map: netMap, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false }));
   net.position.set(0, GOAL_HH / 2, GOAL_Z - 0.35);
   g.add(net);
   g.userData.net = net;
@@ -491,13 +551,13 @@ function netTex(THREE) {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
   g.clearRect(0, 0, 128, 128);
-  g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 3;
-  for (let i = 0; i <= 8; i++) {
-    g.beginPath(); g.moveTo(i * 16, 0); g.lineTo(i * 16, 128); g.stroke();
-    g.beginPath(); g.moveTo(0, i * 16); g.lineTo(128, i * 16); g.stroke();
+  g.strokeStyle = 'rgba(244,248,252,0.82)'; g.lineWidth = 1.25;
+  for (let i = 0; i <= 4; i++) {
+    g.beginPath(); g.moveTo(i * 32 + 0.5, 0); g.lineTo(i * 32 + 0.5, 128); g.stroke();
+    g.beginPath(); g.moveTo(0, i * 32 + 0.5); g.lineTo(128, i * 32 + 0.5); g.stroke();
   }
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(8, 4);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(7, 3);
   return t;
 }
 function wordTex(THREE) {
