@@ -369,55 +369,72 @@ export function createPenalty(api) {
     }
   }
 
+  // setViewport/setScissor take CSS pixels and multiply by pixelRatio themselves.
+  // Drawing-buffer pixels (getDrawingBufferSize) get scaled twice on a real phone.
+  function cssSize(renderer) {
+    renderer.getSize(buf);
+    return { w: buf.x, h: buf.y };
+  }
+  function restorePass(renderer, camera, saved) {
+    const { w, h } = cssSize(renderer);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, w, h);
+    renderer.setScissor(0, 0, w, h);
+    if (camera.clearViewOffset) camera.clearViewOffset();
+    camera.aspect = saved.aspect;
+    camera.fov = saved.fov;
+    camera.updateProjectionMatrix();
+  }
+
   function render(renderer, scene) {
     if (pen.phase !== 'countdown') return false;
     const camera = api.camera;
-    const savedAspect = camera.aspect, savedFov = camera.fov;
-    renderer.getDrawingBufferSize(buf);
-    const w = buf.x, h = buf.y, mid = (h / 2) | 0;
+    const saved = { aspect: camera.aspect, fov: camera.fov };
+    const { w, h } = cssSize(renderer);
+    const mid = (h / 2) | 0;
     const topH = h - mid, botH = mid;
-    renderer.setScissorTest(true);
-    // Top half: the whole goal, keeper small inside it.
-    renderer.setViewport(0, mid, w, topH);
-    renderer.setScissor(0, mid, w, topH);
-    burst.visible = false;
-    const topAspect = w / Math.max(1, topH);
-    const distG = 5.5;
-    camera.aspect = topAspect;
-    camera.position.set(0, 1.25, GOAL_Z + distG);
-    camera.lookAt(0, 1.12, GOAL_Z);
-    camera.fov = fovFor(distG, GOAL_HW + 0.85, 1.7, topAspect, 1.08);
-    camera.updateProjectionMatrix();
-    renderer.render(scene, camera);
-    // Bottom half: full body, head to boots, on the sunburst.
-    renderer.setViewport(0, 0, w, botH);
-    renderer.setScissor(0, 0, w, botH);
-    const hero = api.getHero();
     const hidden = [];
-    for (const o of scene.children) {
-      if (o === burst || (hero && o === hero.group) || o.isLight) continue;
-      if (!o.visible) continue;
-      hidden.push(o); o.visible = false;
+    try {
+      renderer.setScissorTest(true);
+      // Top half: the whole goal, keeper small inside it.
+      renderer.setViewport(0, mid, w, topH);
+      renderer.setScissor(0, mid, w, topH);
+      burst.visible = false;
+      const topAspect = w / Math.max(1, topH);
+      const distG = 5.5;
+      camera.aspect = topAspect;
+      camera.position.set(0, 1.25, GOAL_Z + distG);
+      camera.lookAt(0, 1.12, GOAL_Z);
+      camera.fov = fovFor(distG, GOAL_HW + 0.85, 1.7, topAspect, 1.08);
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+      // Bottom half: full body, head to boots, on the sunburst.
+      renderer.setViewport(0, 0, w, botH);
+      renderer.setScissor(0, 0, w, botH);
+      const hero = api.getHero();
+      for (const o of scene.children) {
+        if (o === burst || (hero && o === hero.group) || o.isLight) continue;
+        if (!o.visible) continue;
+        hidden.push(o); o.visible = false;
+      }
+      burst.visible = true;
+      burst.position.set(0, 1.05, 1.7);
+      const botAspect = w / Math.max(1, botH);
+      const distP = 4.6;
+      camera.aspect = botAspect;
+      camera.position.set(0.2, 1.0, -distP);
+      camera.lookAt(0, 0.9, 0.05);
+      camera.fov = fovFor(distP, 1.25, 1.35, botAspect, 1.16);
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+      return true;
+    } finally {
+      for (const o of hidden) o.visible = true;
+      stad.visible = true;
+      burst.position.set(0, 1.15, -1.35);
+      burst.visible = pen.phase === 'countdown';
+      restorePass(renderer, camera, saved);
     }
-    burst.visible = true;
-    burst.position.set(0, 1.05, 1.7);
-    const botAspect = w / Math.max(1, botH);
-    const distP = 4.6;
-    camera.aspect = botAspect;
-    camera.position.set(0.2, 1.0, -distP);
-    camera.lookAt(0, 0.9, 0.05);
-    camera.fov = fovFor(distP, 1.25, 1.35, botAspect, 1.16);
-    camera.updateProjectionMatrix();
-    renderer.render(scene, camera);
-    for (const o of hidden) o.visible = true;
-    stad.visible = true;
-    burst.position.set(0, 1.15, -1.35);
-    renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, w, h);
-    camera.aspect = savedAspect;
-    camera.fov = savedFov;
-    camera.updateProjectionMatrix();
-    return true;
   }
 
   return {
