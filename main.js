@@ -1308,11 +1308,45 @@ const clock = new THREE.Timer(); clock.connect?.(document);
 const camPos = new THREE.Vector3(0, 3.0, 5.0), camLook = new THREE.Vector3(0, 1.2, -6);
 let shake = 0;
 
-function resize() {
-  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h;
-  camera.fov = w / h < 0.75 ? 72 : 62; camera.updateProjectionMatrix();
+const _view = new THREE.Vector2();
+function viewBox() {
+  const vv = window.visualViewport;
+  if (vv && vv.width > 0 && vv.height > 0) return { w: vv.width, h: vv.height, x: vv.offsetLeft || 0, y: vv.offsetTop || 0 };
+  return { w: innerWidth, h: innerHeight, x: 0, y: 0 };
 }
-addEventListener('resize', resize); resize();
+function resetRenderer() {
+  renderer.getSize(_view);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, _view.x, _view.y);
+  renderer.setScissor(0, 0, _view.x, _view.y);
+  if (camera.clearViewOffset) camera.clearViewOffset();
+}
+function resize() {
+  const box = viewBox();
+  const w = Math.max(1, Math.round(box.w)), h = Math.max(1, Math.round(box.h));
+  const root = document.documentElement.style;
+  root.setProperty('--vv-x', box.x + 'px');
+  root.setProperty('--vv-y', box.y + 'px');
+  root.setProperty('--vv-w', w + 'px');
+  root.setProperty('--vv-h', h + 'px');
+  canvas.style.left = box.x + 'px';
+  canvas.style.top = box.y + 'px';
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.style.right = 'auto';
+  canvas.style.bottom = 'auto';
+  renderer.setSize(w, h, false);
+  resetRenderer();
+  camera.aspect = w / h;
+  camera.fov = w / h < 0.75 ? 72 : 62;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', resize);
+  visualViewport.addEventListener('scroll', resize);
+}
+resize();
 
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
@@ -1386,7 +1420,7 @@ function frame() {
   if (hero) { driveMocap(); hero.update(dt); if (S.state === 'play') { applySkillPose(dt); jogMatch(dt); penalty.pose(dt); } }
   updateFX(dt, S.state === 'play' ? S.speed * dt : 0);
   if (SK.fov > 0.01) SK.fov *= Math.exp(-rdt * 9);
-  const fov0 = innerWidth / innerHeight < 0.75 ? 72 : 62; if (Math.abs(camera.fov - fov0 - SK.fov) > 0.01) { camera.fov = fov0 + SK.fov; camera.updateProjectionMatrix(); }
+  const box = viewBox(); const fov0 = box.w / Math.max(1, box.h) < 0.75 ? 72 : 62; if (Math.abs(camera.fov - fov0 - SK.fov) > 0.01) { camera.fov = fov0 + SK.fov; camera.updateProjectionMatrix(); }
   // L train cruises along the elevated track
   lTrain.position.z += dt * (S.state === 'play' ? S.speed + 12 : 10); if (lTrain.position.z > 60) lTrain.position.z = -260 - Math.random() * 120;
 
@@ -1407,7 +1441,7 @@ function frame() {
   }
   if (S.state !== 'title') faceL.intensity = 0;
   sunL.position.set(P.x - 6, 14, -6); sunL.target.position.set(P.x, 0, -4);
-  if (!penalty.render(renderer, scene)) renderer.render(scene, camera);
+  if (!penalty.render(renderer, scene)) { resetRenderer(); renderer.render(scene, camera); }
   requestAnimationFrame(frame);
 }
 
@@ -1418,7 +1452,7 @@ window.__cam = camera;
 const penalty = createPenalty({
   THREE, scene, camera, camLook, S, P, BS, obstacles, airStep, popup, cancelSkill, scroll: scrollWorld, release, GRAV, BR,
   jogCadence, syncJog: syncJogPhase, ikLeg, getHero: () => hero, getBall: () => footBall,
-  baseFov: () => innerWidth / innerHeight < 0.75 ? 72 : 62,
+  baseFov: () => { const b = viewBox(); return b.w / Math.max(1, b.h) < 0.75 ? 72 : 62; },
   scratch: { q: new THREE.Quaternion(), axis: new THREE.Vector3(), v: new THREE.Vector3(), v2: new THREE.Vector3() }
 });
 window.__fireRush = { feetG: () => SIDES.map(s => { const v = hero.bones["ball_" + s].getWorldPosition(new THREE.Vector3()); hero.group.worldToLocal(v); return s + ":" + v.x.toFixed(2) + "," + v.y.toFixed(2) + "," + v.z.toFixed(2); }).join(" "), S, P, SK, SM, SLOW, MOVES, ROLLOVER, BS, SURF, FOOT_REL, act, get footBall() { return footBall; }, get hero() { return hero; }, THREE, startGame, penalty };
